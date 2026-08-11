@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "app/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "db",
+    "worker"
+  ]
+}
