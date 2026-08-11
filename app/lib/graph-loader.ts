@@ -444,7 +444,9 @@ function geometryColumn(db: SqlDatabase, table: string): string {
 
 async function loadGeoPackage(file: File): Promise<GraphDataset> {
   const initSqlJs = (await import("sql.js/dist/sql-wasm.js")).default;
-  const SQL = await initSqlJs({ locateFile: () => "sql-wasm.wasm" });
+  const SQL = await initSqlJs({
+    locateFile: () => new URL("sql-wasm.wasm", window.location.href).href,
+  });
   const db = new SQL.Database(new Uint8Array(await file.arrayBuffer())) as unknown as SqlDatabase;
   try {
     if (!tableExists(db, "graph_nodes") || !tableExists(db, "graph_edges")) {

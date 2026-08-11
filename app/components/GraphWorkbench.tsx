@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { DEMO_DATASET } from "../lib/demo-data";
 import { loadGraphFile } from "../lib/graph-loader";
@@ -32,6 +32,8 @@ const VISIBILITY_LABELS: Array<[keyof VisibilityState, string]> = [
   ["edges", "Connections"],
   ["spaces", "IfcSpace boundaries"],
 ];
+
+const DEFAULT_GRAPH_URL = "HSIMG_v5_output.gpkg";
 
 function connectedComponents(dataset: GraphDataset): number {
   const parent = new Map(dataset.nodes.map((node) => [node.id, node.id]));
@@ -127,6 +129,7 @@ export function GraphWorkbench() {
   const [topRowHeight, setTopRowHeight] = useState(63);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const defaultLoadStarted = useRef(false);
 
   const selectedNode = useMemo(
     () => dataset.nodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -168,6 +171,31 @@ export function GraphWorkbench() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (defaultLoadStarted.current) return;
+    defaultLoadStarted.current = true;
+
+    const loadBundledGraph = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(DEFAULT_GRAPH_URL);
+        if (!response.ok) {
+          throw new Error(`The bundled V5 graph could not be downloaded (${response.status}).`);
+        }
+        const file = new File([await response.blob()], "HSIMG_v5_output.gpkg", {
+          type: "application/geopackage+sqlite3",
+        });
+        await importFile(file);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "The bundled V5 graph could not be loaded.");
+        setLoading(false);
+      }
+    };
+
+    void loadBundledGraph();
+  }, []);
 
   const beginColumnResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const dashboard = dashboardRef.current;
