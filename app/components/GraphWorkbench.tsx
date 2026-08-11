@@ -220,7 +220,7 @@ export function GraphWorkbench() {
           </div>
         </div>
         <div className="university-brand" aria-label="University of Oviedo">
-          <img src="/university-oviedo.png" alt="University of Oviedo" />
+          <img src="university-oviedo.png" alt="University of Oviedo" />
         </div>
         <div className="file-status">
           <span className={`source-badge source-${dataset.sourceType}`}>
