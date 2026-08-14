@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphDataset, GraphNode, VisibilityState } from "../lib/types";
-import { NODE_COLORS } from "../lib/types";
+import { NODE_COLORS, nodeDisplayLabel } from "../lib/types";
 import {
   conceptualDoorLinks,
   conceptualMobilityLinks,
@@ -348,7 +348,7 @@ export function FloorPlan2D({
     if (selected) {
       const position = screen(selected.x, selected.y);
       ctx.font = "500 12px system-ui";
-      const text = selected.name;
+      const text = nodeDisplayLabel(selected);
       const width = ctx.measureText(text).width + 16;
       const labelX = Math.min(Math.max(position.x - width / 2, 6), size.width - width - 6);
       const labelY = Math.max(position.y - 34, 8);

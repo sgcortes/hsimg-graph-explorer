@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { DEMO_DATASET } from "../lib/demo-data";
 import { loadGraphFile } from "../lib/graph-loader";
+import { nodeDisplayLabel } from "../lib/types";
 import type { GraphDataset, GraphNode, VisibilityState } from "../lib/types";
 import { FloorPlan2D } from "./FloorPlan2D";
 import { Graph3D } from "./Graph3D";
@@ -434,7 +435,7 @@ export function GraphWorkbench() {
           <div className="detail-heading">
             <div>
               <span className="panel-index">03</span>
-              <div><h2>Node inspector</h2><p>{selectedNode ? `${categoryLabel(selectedNode)} · ${selectedNode.name}` : "Select a node"}</p></div>
+              <div><h2>Node inspector</h2><p>{selectedNode ? `${categoryLabel(selectedNode)} · ${nodeDisplayLabel(selectedNode)}` : "Select a node"}</p></div>
             </div>
             {selectedNode && <span className={`node-type-badge type-${selectedNode.category}`}>{selectedNode.mobilityType ?? selectedNode.nodeType}</span>}
           </div>
@@ -447,7 +448,7 @@ export function GraphWorkbench() {
               <span className="panel-index">04</span>
               <div><h2>Metadata</h2><p>Attributes of the selected node</p></div>
             </div>
-            {selectedNode && <code className="node-id">{selectedNode.id}</code>}
+            {selectedNode && <code className="node-id">{nodeDisplayLabel(selectedNode)}</code>}
           </div>
           <MetadataPanel node={selectedNode} />
         </article>

@@ -98,6 +98,18 @@ export const NODE_COLORS: Record<NodeCategory, string> = {
 
 export const VERTICAL_MOBILITY_COLOR = "#0088ad";
 
+export function nodeFid(node: GraphNode): string | null {
+  const value = node.raw.fid ?? node.metadata.fid;
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? String(Math.trunc(numeric)) : String(value);
+}
+
+export function nodeDisplayLabel(node: GraphNode): string {
+  const fid = nodeFid(node);
+  return fid ? `FID ${fid}` : node.name;
+}
+
 export function categoryForNode(raw: Record<string, unknown>): NodeCategory {
   const nodeType = String(raw.node_type ?? raw.nodeType ?? "");
   const mobility = String(raw.mobility_type ?? raw.mobilityType ?? "");
