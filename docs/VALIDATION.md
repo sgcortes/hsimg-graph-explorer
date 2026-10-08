@@ -1,108 +1,121 @@
-# Validación de conectividad · versión 1.0
+# Connectivity validation — version 1.1
 
-El análisis se realiza en el navegador. No modifica el GeoPackage ni el IFC.
-La pestaña tiene una vista independiente del explorador. Al cambiar entre
-pestañas se conservan sus selecciones y controles. Al cargar otro modelo se
-reinicia el análisis y las referencias se separan por SHA-256 del archivo.
+Analysis runs in the browser without changing the IFC or GeoPackage. The
+Validation tab has its own floor plan, selection and filters. Visibility switches
+for **Doors**, **Stairs** and **Elevators** are independent of **Context graph**;
+they persist across floor and analysis changes and never change results.
+All available door positions are shown, including passing doors and inventoried
+doors without graph nodes. Doors without coordinates remain listed in the table.
+Square markers represent doors; a gold outline identifies an exterior door.
+Vertical markers use S (stair), E (elevator) and R (ramp); D marks the route origin.
+Door and vertical-element colours represent local topology checks even in the
+exterior-reachability view. The context graph is an independent overlay.
 
-## Reglas
+## Required-access scope
 
-| Comprobación | Unidad y criterio |
+Explicit IFC semantic labels identify service shafts (`Patinillo`, `Service shaft`,
+`Installation shaft`) and construction zones (`Obra`, `Zona de obra`,
+`Construction zone`, `Construction area`). An optional numeric reference suffix
+is accepted. The matcher checks the long name, name and space reference.
+It does not infer exclusions from missing doors and does not match elevator
+shaft descriptions. Original IFC identifiers and attributes remain unchanged.
+
+These spaces receive **Excluded by scope**, appear grey and stay in the inventory.
+They count as neither passes nor issues, and never as true negatives. Their
+navigable members cannot be used as destinations or transit nodes by exterior
+route analysis, or as exits to a served floor. Their existing connections are
+reported as evidence so that maintenance access can be reviewed.
+
+Use **Review excluded spaces**, then **Locate**, to inspect each space.
+**Access requirement** offers Automatic from IFC labels, Require access and
+Intentionally non-accessible. Overrides are stored locally and exported with
+the reference. Changing scope clears reference labels because routes elsewhere
+may also change; export the current reference first to preserve that review.
+Reference imports reject a different scope, model or validator version.
+
+## Checks
+
+| Check | Unit and criterion |
 | --- | --- |
-| Comunicación de espacios | Un caso por espacio inventariado. Sus representantes navegables tienen una conexión con un acceso u otro espacio. Los padres semánticos no sustituyen al subgrafo horizontal. Los IfcSpace usados para derivar ascensores se asocian a sus paradas mediante `HSIMG.SourceSpaceIdsByStorey`. |
-| Puertas | Un caso por puerta IFC inventariada. Cada lado asociado alcanza el interior del espacio sin rodear por otra puerta. Se esperan dos lados en una interior y al menos uno en una exterior. Una asociación IFC incompleta genera una incidencia para revisar. |
-| Salida vertical a planta | Un caso por terminal/parada y planta declarada como servida. Se busca un espacio de esa misma planta, excluyendo las aristas `vertical_path` y el hueco propio del ascensor. Una parada ausente también se señala. No se exige salida desde descansillos intermedios ni en todas las plantas atravesadas geométricamente. |
-| Continuidad vertical | Un caso por elemento peatonal. Los nodos internos deben estar unidos por sus propios tramos y descansillos. Las rampas exclusivamente vehiculares se excluyen. |
-| Extremos internos | Un caso por extremo/cruce de eje horizontal sin rol protegido de acceso. Grado topológico cero o uno genera una candidatura a revisión, que puede corresponder a un fondo de pasillo legítimo. |
-| Integridad | Un caso por arco. Extremos existentes y distintos, coordenadas finitas y longitudes disponibles no negativas. |
-| Duplicación exacta | Un caso por arco. Se señala la repetición posterior de los mismos extremos ordenados, tipo, modo y polilínea. Los arcos recíprocos y los recorridos geométricamente distintos se conservan. |
-| Alcanzabilidad exterior | Un caso por pareja puerta exterior–espacio y perfil. Se respeta el sentido de los arcos y los permisos de nodos y conexiones. Basta alcanzar algún representante del espacio; no demuestra cobertura de toda su superficie. |
+| Space connectivity | One case per inventoried space. Required spaces need a navigable member and a link outside their own member set. An isolated semantic parent does not establish isolation. Space-derived elevator cabins use `HSIMG.SourceSpaceIdsByStorey` to locate their stop nodes. |
+| Door connections | One case per inventoried door. Every associated side reaches the space interior through this door, without a detour through another door. Interior doors need at least two associated spaces; exterior doors need at least one. |
+| Vertical exit to floor | One case per terminal/stop and declared served floor. It must reach a required space on that floor, without `vertical_path` travel or transit through excluded spaces. The elevator's own source cabin cannot satisfy the exit. Missing stops are flagged. Intermediate landings and floors merely crossed by a shaft need no exit. |
+| Vertical continuity | One case per pedestrian element. Its internal nodes form one component through its own flights and landings. Vehicle-only ramps are omitted. |
+| Internal dead ends | One case per unprotected horizontal axis endpoint/junction. Zero or one distinct neighbour flags a review candidate; legitimate corridor ends can also meet this condition. |
+| Integrity | One case per directed arc. Endpoints exist and differ; coordinates and any stored length are finite, and length is non-negative. |
+| Exact duplicates | One case per directed arc. Later repeats of ordered endpoints, type, mode and polyline are flagged. Reverse arcs and distinct physical alternatives are retained. |
+| Exterior reachability | One case per exterior-door/space/profile combination. Directed traversal respects node and edge permissions. Reaching one interior representative suffices; it does not establish coverage of the whole space. |
 
-Las comprobaciones topológicas locales no imponen un perfil. Una puerta cerrada
-puede estar conectada correctamente y, a la vez, impedir el acceso exterior del
-perfil elegido. La búsqueda exterior separa rutas confirmadas, rutas posibles
-solo al aceptar datos desconocidos y ausencia de ruta. El conjunto de puertas
-incluye las marcadas exteriores en el IFC aunque el generador no las haya
-declarado elegibles como entradas: evita ocultar errores de asociación.
+Local topology checks do not impose a mobility profile. Exterior routes
+distinguish confirmed routes, routes requiring unknown permissions, and no route.
+All IFC exterior doors remain included, even if the generator did not mark them
+as eligible entrances. Floor identity and edge type determine a floor connection;
+no arbitrary elevation tolerance is imposed on stair mesh terminals.
 
-La coincidencia de planta se determina por el identificador de planta y el
-tipo de conexión. No se impone una tolerancia arbitraria de cota: los ejes
-extraídos de peldaños pueden terminar antes del pavimento acabado. La calidad
-de esa asignación espacial necesita un contraste geométrico independiente.
+The inspector separates **Evidence**, **What this means**, **Recommended review**
+and **Check criterion**. The cases CSV includes those explanations and the scope.
+An issue is a review candidate, not an independently confirmed IFC defect.
 
-## Referencias y métricas
+## Independent references and metrics
 
-Positivo significa **incidencia de la regla**, no “espacio accesible”. Para
-alcanzabilidad, el positivo es un espacio sin ruta desde ese origen y perfil.
+Positive means a flagged issue, or an unreachable required space for the chosen
+origin and mobility profile. Independent anomaly/normal labels establish TP, FP,
+FN and TN. Review passing cases too: otherwise false negatives remain unknown.
 
-| Predicción | Referencia | Clasificación |
-| --- | --- | --- |
-| Incidencia | Anomalía real | TP |
-| Incidencia | Sin anomalía real | FP |
-| Conforme | Anomalía real | FN |
-| Conforme | Sin anomalía real | TN |
-
-- Precisión = TP / (TP + FP).
-- Exhaustividad = TP / (TP + FN).
+- Precision = TP / (TP + FP).
+- Recall = TP / (TP + FN).
 - F1 = 2 TP / (2 TP + FP + FN).
-- Los denominadores cero se muestran como no calculables.
-- Los casos no revisados o no evaluables se excluyen, con conteos explícitos.
-- Una revisión parcial solo permite describir el subconjunto revisado; no
-  representa una estimación independiente para todo el edificio.
-- Revisar únicamente las alertas no permite detectar los falsos negativos.
+- Zero denominators are shown as not calculable.
+- Unreviewed, unknown and out-of-scope cases are excluded from metrics.
+- Tables separately report out-of-scope totals and reviewed evaluable counts.
+- Partial reviews describe only the reviewed subset, not the entire building.
 
-Las etiquetas manuales se guardan en `localStorage`. La exportación JSON
-incluye versión de reglas, SHA-256, perfil, procedencia y etiquetas por ID
-estable. Las etiquetas de rutas llevan el perfil y la puerta en su ID; las
-topológicas se comparten entre perfiles. Importar otro archivo o versión se
-rechaza. El CSV contiene tanto casos conformes como incidencias y desconocidos,
-con identificadores de espacio, planta, puerta, perfil y evidencia.
+Reference JSON records the validator version, dataset SHA-256, profile, scope
+overrides, provenance and labels with stable case IDs. Route case IDs include
+the profile and origin; topology cases are shared across profiles. Version 1.0
+references cannot be imported as version 1.1 because the scope policy changed.
+CSV exports include all cases, predictions, reference labels and explanations.
 
-## Resultado de la ejecución sobre el GeoPackage incluido
+## Included IFC v13 dataset
 
-Archivo: `EPM_IFC_v13_HSIMG_v14.gpkg`.
+File: `EPM_IFC_v13_HSIMG_v14.gpkg`.
 SHA-256: `c508507dc898162ea7149566668995645534ca05f0a335cd0d945010079a58a8`.
-Inventario cargado: 1.517 espacios, 1.401 puertas IFC y 80 elementos verticales
-(55 escaleras, 13 ascensores y 12 rampas).
+Inventory: 1,517 spaces, 1,401 doors and 80 vertical elements (55 stairs,
+13 elevators and 12 ramps). The default scope excludes 96 service shafts and
+70 construction zones, leaving 1,351 required destinations.
 
-| Regla | Casos | Incidencias automáticas |
-| --- | ---: | ---: |
-| Espacios sin comunicación | 1.517 | 231 |
-| Conexión de puertas | 1.401 | 103 |
-| Escaleras: salida a planta | 110 | 3 |
-| Ascensores: salida a planta | 62 | 9 |
-| Rampas: salida a planta | 24 | 8 |
-| Continuidad vertical peatonal | 76 | 0 |
-| Extremos internos candidatos | 687 | 24 |
-| Integridad de arcos | 15.542 | 0 |
-| Duplicados exactos | 15.542 | 0 |
+| Check | Total cases | Out of scope | Automatic issues |
+| --- | ---: | ---: | ---: |
+| Space connectivity | 1,517 | 166 | 167 |
+| Door connections | 1,401 | 0 | 103 |
+| Stair floor exits | 110 | 0 | 3 |
+| Elevator floor exits | 62 | 0 | 9 |
+| Ramp floor exits | 24 | 0 | 8 |
+| Pedestrian vertical continuity | 76 | 0 | 0 |
+| Internal dead ends | 687 | 0 | 24 |
+| Arc integrity | 15,542 | 0 | 0 |
+| Exact duplicates | 15,542 | 0 | 0 |
 
-Se analizan 28 puertas declaradas exteriores (incluidas cinco con asociaciones
-distintas a las entradas elegibles del generador). Con perfil general, 27
-alcanzan 1.099 espacios y una alcanza 2. Cada puerta mantiene 1.517 destinos en
-su denominador. No hay etiquetas independientes incluidas ni cifras de F1
-inventadas. Los conteos son detecciones del grafo, no errores IFC confirmados.
+There are 28 exterior origins. With the general profile and default scope,
+27 doors reach 1,014 required spaces and leave 337 unreachable; one door reaches
+2 and leaves 1,349 unreachable. Each origin also lists 166 excluded spaces.
+Route percentages divide by the 1,351 required spaces, not the full inventory.
+These are graph results, not scientific accuracy measurements; no independent
+reference labels or invented F1 values are bundled.
 
-Los diagnósticos históricos del generador se muestran aparte: incluyen
-reparaciones y conexiones rechazadas, por lo que no se suman a los resultados
-de las reglas actuales ni se usan como referencia de verdad.
+Historical generator diagnostics include repairs and rejected connections;
+they are displayed separately and are not added to current issue totals.
 
-## Límites
+## Limits and reproducibility
 
-- El inventario es el exportado al GeoPackage. Los elementos IFC omitidos
-  requieren cotejar el archivo IFC original. Un JSON de grafo avisa de su
-  inventario incompleto y de la ausencia de polígonos.
-- La continuidad de escaleras se evalúa en los tramos exportados; no certifica
-  individualmente todos los IfcStairFlight originales.
-- Un recorrido alternativo alrededor de un obstáculo no es necesariamente
-  duplicación. La optimalidad geométrica real exige un dominio navegable o
-  referencia independiente; no se infiere de este grafo reducido.
-- La alcanzabilidad no certifica accesibilidad normativa, seguridad ni
-  evacuación, y una restricción de perfil no implica un defecto del IFC.
+The GeoPackage inventory can omit source IFC elements. Detecting such omissions
+requires comparison with the original IFC. Continuity checks concern exported
+vertical elements, not independently verified individual IfcStairFlight records.
+Alternative physical passages are not duplicates by definition. The reduced
+graph cannot prove geometrically shortest routes, clear widths, regulatory
+accessibility, safety or evacuation performance without independent evidence.
 
-## Verificación reproducible
-
-`pnpm test:validation` prueba casos dirigidos, inventarios ausentes, padres
-semánticos, cabinas derivadas, conexiones locales, vuelos desconectados,
-duplicados, métricas y referencias. Además carga el GeoPackage real mediante
-el mismo lector de la aplicación. Se ejecuta también en el despliegue Pages.
+`pnpm test:validation` exercises topology, directed reachability, profile
+uncertainty, elevator cabins, exclusions and overrides, transit restrictions,
+metrics, reference consistency and map layers. It also reads the real bundled
+GeoPackage through the production loader. The checks run in the Pages workflow.

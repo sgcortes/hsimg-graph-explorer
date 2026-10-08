@@ -305,8 +305,8 @@ export function GraphWorkbench() {
         <div className="message" role="status">{dataset.warnings[0]}</div>
       )}
 
-      <div className="workbench-tabs" role="tablist" aria-label="Herramientas del grafo">
-        {[ ["explorer", "Explorador"], ["validation", "Validación"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const next = e.key === "Home" ? "explorer" : e.key === "End" ? "validation" : activeTab === "explorer" ? "validation" : "explorer"; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
+      <div className="workbench-tabs" role="tablist" aria-label="Graph tools">
+        {[ ["explorer", "Explorer"], ["validation", "Validation"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const next = e.key === "Home" ? "explorer" : e.key === "End" ? "validation" : activeTab === "explorer" ? "validation" : "explorer"; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
       </div>
       <div id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" hidden={activeTab !== "validation"}>
         {validationOpened && <ValidationWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />}

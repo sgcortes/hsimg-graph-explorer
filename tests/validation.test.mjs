@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 import initSqlJs from "sql.js";
-import { validateGraph, metrics, importReference, csvRows, VALIDATION_VERSION } from "../app/lib/validation.ts";
+import { validateGraph, metrics, importReference, csvRows, spaceScope, readScopeOverrides, VALIDATION_VERSION } from "../app/lib/validation.ts";
 
 const node = (id, props = {}) => ({ id, name: id, x: 0, y: 0, z: 0, nodeType: "internal_mobility", nodeRole: "axis_junction", mobilityType: "horizontal", parentNodeId: null, subgraphId: null, hierarchyLevel: 2, storeyId: "L0", accessibleGeneral: true, accessibleWheelchair: true, category: "internal", metadata: {}, raw: {}, ...props });
 const edge = (source, target, props = {}) => ({ id: `${source}-${target}`, source, target, edgeType: "connection", mobilityMode: "walk", subgraphId: null, points: [[0, 0, 0], [1, 0, 0]], accessibleGeneral: true, accessibleWheelchair: true, metadata: {}, raw: {}, ...props });
@@ -71,6 +71,66 @@ test("reference import rejects other models and invalid labels; CSV neutralizes 
   assert.match(csvRows([["=SUM(1,2)", 'a"b']]), /"'=SUM\(1,2\)","a""b"/);
 });
 
+test("semantic exclusions never infer intended inaccessibility from a missing door alone", () => {
+  const spaces = [space("shaft"), space("works"), space("office"), space("lift")];
+  spaces[0].metadata.long_name = "Patinillo";
+  spaces[1].metadata.long_name = "Obra";
+  spaces[2].metadata.long_name = "Office";
+  spaces[3].metadata.long_name = "Elevator shaft";
+  const data = dataset(spaces.map((s) => node(s.id, { nodeType: "space" })), [], spaces);
+  const cases = validateGraph(data).cases.filter((c) => c.rule === "space_connection");
+  assert.deepEqual(cases.map((c) => c.status), ["excluded", "excluded", "fail", "fail"]);
+  assert.equal(validateGraph(data, "general", { shaft: "include" }).cases.find((c) => c.entityId === "shaft").status, "fail");
+  assert.equal(spaceScope({ ...space("x"), name: "Obra 103" }).excluded, true);
+  assert.equal(spaceScope({ ...space("x"), name: "Obra laboratory" }).excluded, false);
+  assert.throws(() => readScopeOverrides({ absent: "exclude" }, new Set(["shaft"])));
+});
+
+test("excluded spaces cannot act as route shortcuts or satisfy an elevator floor exit", () => {
+  const shaft = { ...space("shaft"), metadata: { long_name: "Patinillo" } };
+  const data = dataset([node("d", { nodeType: "door" }), node("shaft", { nodeType: "space" }), node("room", { nodeType: "space" })], [edge("d", "shaft"), edge("shaft", "room")], [shaft, space("room")], [door("d")]);
+  const result = validateGraph(data);
+  assert.deepEqual([result.entrances[0].reachable, result.entrances[0].unreachable, result.entrances[0].excluded], [0, 1, 1]);
+  assert.equal(validateGraph(data, "general", { shaft: "include" }).entrances[0].reachable, 2);
+  data.nodes.push(node("stop", { parentNodeId: "lift", nodeRole: "elevator_stop" }));
+  data.edges = [edge("stop", "shaft")];
+  data.verticalFeatures = [{ id: "lift", verticalId: "lift", name: "Lift", verticalType: "elevator", storeyIds: ["L0"], metadata: {} }];
+  assert.equal(validateGraph(data).cases.find((c) => c.rule === "elevator_floor").status, "fail");
+});
+
+test("out-of-scope cases never improve metrics; references require matching scope", () => {
+  const counts = metrics([{ id: "x", status: "excluded" }, { id: "y", status: "pass" }], { x: "normal", y: "normal" });
+  assert.deepEqual([counts.tn, counts.excluded, counts.evaluated], [1, 1, 1]);
+  const pack = JSON.stringify({ schema: "hsimg-validation-reference", version: VALIDATION_VERSION, fingerprint: "test", scopeOverrides: { x: "include" }, labels: { x: "normal" } });
+  assert.throws(() => importReference(pack, "test", new Set(["x"])), /different validation scope/);
+  assert.deepEqual(importReference(pack, "test", new Set(["x"]), { x: "include" }), { x: "normal" });
+});
+
+test("validation map shows normal and omitted doors and independent vertical layers", async () => {
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const source = await readFile(new URL("../app/components/ValidationMap2D.tsx", import.meta.url), "utf8");
+  let js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  for (const id of ["react", "react/jsx-runtime"]) js = js.replaceAll(`from "${id}"`, `from "${import.meta.resolve(id)}"`);
+  js = js.replaceAll('from "../lib/validation"', `from "${new URL("../app/lib/validation.ts", import.meta.url).href}"`);
+  const { ValidationMap2D } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
+  const vertical = (id, kind) => ({ id, verticalId: id, name: id, verticalType: kind, storeyIds: ["L0"], paths: [[[0, 0, 0], [1, 1, 3]]], rings: [], metadata: {} });
+  const data = dataset([node("d", { nodeType: "door" }), node("s", { nodeType: "space" })], [edge("d", "s")], [space("s")], [door("d", true, ["s"]), door("omitted")], [vertical("stairs", "stair"), vertical("lift", "elevator")]);
+  const cases = validateGraph(data).cases;
+  const render = (layers) => renderToStaticMarkup(createElement(ValidationMap2D, { dataset: data, storeyId: "L0", cases, inspectionCases: cases, selected: null, layers, onLayersChange() {}, onSelect() {} }));
+  const all = render({ graph: false, doors: true, stairs: true, elevators: true });
+  assert.equal((all.match(/data-layer="door"/g) ?? []).length, 2);
+  assert.match(all, /data-entity-id="d" data-status="pass"/);
+  assert.match(all, /data-layer="stair"/);
+  assert.match(all, /data-layer="elevator"/);
+  const stairsOnly = render({ graph: false, doors: false, stairs: true, elevators: false });
+  assert.match(stairsOnly, /data-layer="stair"/);
+  assert.doesNotMatch(stairsOnly, /data-layer="door"|data-layer="elevator"/);
+  const elevatorOnly = render({ graph: true, doors: false, stairs: false, elevators: true });
+  assert.match(elevatorOnly, /data-layer="elevator"/);
+  assert.doesNotMatch(elevatorOnly, /data-layer="stair"|data-layer="door"/);
+});
+
 test("bundled IFC v13: complete inventories, known stair failures, and reachability", async (t) => {
   const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
   const moduleUrl = (text) => `data:text/javascript;base64,${Buffer.from(ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText).toString("base64")}`;
@@ -92,6 +152,11 @@ test("bundled IFC v13: complete inventories, known stair failures, and reachabil
   const counts = Object.fromEntries(rules.map((rule) => [rule, result.cases.filter((c) => c.rule === rule && c.status === "fail").length]));
   t.diagnostic(JSON.stringify({ failures: counts, entrances: result.entrances.length, reach: result.entrances.map((e) => [e.door.id, e.reachable, e.unreachable, e.unknown]) }));
   assert.equal(counts.stair_floor, 3);
+  assert.equal(counts.space_connection, 167);
+  assert.equal([...result.scopes.values()].filter((s) => s.excluded).length, 166);
+  assert.equal([...result.scopes.values()].filter((s) => s.excluded && s.category === "Service shaft").length, 96);
+  assert.equal([...result.scopes.values()].filter((s) => s.excluded && s.category === "Construction zone").length, 70);
+  assert.ok(result.entrances.every((e) => e.excluded === 166 && e.reachable + e.unreachable + e.unknown === 1351));
   assert.equal(counts.vertical_continuity, 0);
   assert.equal(counts.edge_integrity, 0);
   assert.equal(counts.duplicate_connection, 0);
