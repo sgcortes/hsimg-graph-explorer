@@ -1,6 +1,28 @@
 
 # HSIMG Graph Explorer
 
+## Modelo incluido
+
+La carga inicial usa `EPM_IFC_v13_HSIMG_v14.gpkg`, generado a partir de
+`13_EPM_IFC4_SpaceBoundary (2).ifc` con HSIMG V14. La revisión del modelo IFC
+(v13) y la versión del generador (V14) son independientes.
+
+V14 elimina recorridos horizontales que no participan en rutas mínimas entre
+accesos, conserva las rutas de los perfiles general y de silla de ruedas y
+representa los puntos intermedios como vértices de las polilíneas. Las curvas
+alrededor de obstáculos se mantienen. La tabla `horizontal_cleanup_v14`
+conserva la auditoría; `public/graph-manifest.json` identifica los archivos
+mediante SHA-256 y sus conteos.
+
+El informe no certifica que el edificio carezca de incidencias. El grafo
+reducido está orientado a rutas entre accesos; para estudiar redundancia se
+necesita la exportación del generador con `--keep-all-horizontal-alternatives`.
+
+Publicación reproducible: pnpm 11.25.0, `pnpm install --frozen-lockfile`,
+`pnpm test:graph`, `pnpm exec tsc -p tsconfig.app.json --noEmit` y
+`pnpm build:github`. El despliegue de Pages verifica el GeoPackage y utiliza
+la misma versión de SQL.js y de su archivo WebAssembly.
+
 Public application: https://sgcortes.github.io/hsimg-graph-explorer/
 
 AplicaciÃ³n web para cargar, visualizar y analizar el grafo 3D generado por el

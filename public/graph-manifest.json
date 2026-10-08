@@ -1,0 +1,26 @@
+{
+  "source_ifc": "13_EPM_IFC4_SpaceBoundary (2).ifc",
+  "source_ifc_sha256": "454083d1ed8c672081ac9f9be1f8c9ecf3a2a7c41cf3399f1416c262a829c0f5",
+  "generator_version": 14,
+  "geopackage": "EPM_IFC_v13_HSIMG_v14.gpkg",
+  "geopackage_sha256": "c508507dc898162ea7149566668995645534ca05f0a335cd0d945010079a58a8",
+  "nodes": 7965,
+  "directed_edges": 15542,
+  "spaces": 1517,
+  "doors": 1401,
+  "generated_on": "2026-10-08",
+  "cleanup": {
+    "method": "functional_terminal_shortest_path_union_v14",
+    "nodes_before": 9575,
+    "nodes_after": 7965,
+    "directed_edges_before": 19096,
+    "directed_edges_after": 15542,
+    "unused_directed_edges_removed": 1028,
+    "unused_nodes_removed": 347,
+    "degree_two_nodes_contracted": 1263,
+    "checked_finite_terminal_routes": 41264,
+    "maximum_cost_change": 1.1368683772161603e-13,
+    "horizontal_subgraphs": 167,
+    "status": "passed"
+  }
+}

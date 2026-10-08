@@ -34,7 +34,7 @@ const VISIBILITY_LABELS: Array<[keyof VisibilityState, string]> = [
   ["spaces", "IfcSpace boundaries"],
 ];
 
-const DEFAULT_GRAPH_URL = "HSIMG_v5_output.gpkg";
+const DEFAULT_GRAPH_URL = "EPM_IFC_v13_HSIMG_v14.gpkg";
 
 function connectedComponents(dataset: GraphDataset): number {
   const parent = new Map(dataset.nodes.map((node) => [node.id, node.id]));
@@ -183,14 +183,14 @@ export function GraphWorkbench() {
       try {
         const response = await fetch(DEFAULT_GRAPH_URL);
         if (!response.ok) {
-          throw new Error(`The bundled V5 graph could not be downloaded (${response.status}).`);
+          throw new Error(`The IFC v13 graph could not be downloaded (${response.status}).`);
         }
-        const file = new File([await response.blob()], "HSIMG_v5_output.gpkg", {
+        const file = new File([await response.blob()], DEFAULT_GRAPH_URL, {
           type: "application/geopackage+sqlite3",
         });
         await importFile(file);
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "The bundled V5 graph could not be loaded.");
+        setError(reason instanceof Error ? reason.message : "The IFC v13 graph could not be loaded.");
         setLoading(false);
       }
     };

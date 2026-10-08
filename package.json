@@ -2,6 +2,7 @@
   "name": "hsimg-graph-explorer",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">=22.13.0"
   },
@@ -9,6 +10,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "build:github": "vite build --config vite.github.config.ts",
+    "test:graph": "node --test tests/bundled-graph.test.mjs",
     "start": "vinext start",
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
