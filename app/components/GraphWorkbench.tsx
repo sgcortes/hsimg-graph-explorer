@@ -9,6 +9,7 @@ import type { GraphDataset, GraphNode, VisibilityState } from "../lib/types";
 import { FloorPlan2D } from "./FloorPlan2D";
 import { Graph3D } from "./Graph3D";
 import { NodeContext2D } from "./NodeContext2D";
+import { ValidationWorkbench } from "./ValidationWorkbench";
 
 const DEFAULT_VISIBILITY: VisibilityState = {
   finalist: true,
@@ -114,6 +115,8 @@ function MetadataPanel({ node }: { node: GraphNode | null }) {
 }
 
 export function GraphWorkbench() {
+  const [activeTab, setActiveTab] = useState("explorer");
+  const [validationOpened, setValidationOpened] = useState(false);
   const [dataset, setDataset] = useState<GraphDataset>(DEMO_DATASET);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     DEMO_DATASET.nodes.find((node) => node.category === "mobility")?.id ?? null,
@@ -302,6 +305,13 @@ export function GraphWorkbench() {
         <div className="message" role="status">{dataset.warnings[0]}</div>
       )}
 
+      <div className="workbench-tabs" role="tablist" aria-label="Herramientas del grafo">
+        {[ ["explorer", "Explorador"], ["validation", "Validación"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const next = e.key === "Home" ? "explorer" : e.key === "End" ? "validation" : activeTab === "explorer" ? "validation" : "explorer"; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
+      </div>
+      <div id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" hidden={activeTab !== "validation"}>
+        {validationOpened && <ValidationWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />}
+      </div>
+      <div id="panel-explorer" role="tabpanel" aria-labelledby="tab-explorer" hidden={activeTab !== "explorer"}>
       <section className="stats-row" aria-label="Graph summary">
         <div><span>Nodes</span><strong>{stats.nodes.toLocaleString("en-US")}</strong></div>
         <div><span>Connections</span><strong>{stats.edges.toLocaleString("en-US")}</strong></div>
@@ -454,6 +464,7 @@ export function GraphWorkbench() {
         </article>
       </div>
 
+      </div>
       <footer className="app-footer">
         <span>Processing runs entirely in your browser; the file is not uploaded to any server.</span>
         <span className="footer-contact">

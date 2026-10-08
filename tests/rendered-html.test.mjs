@@ -30,7 +30,9 @@ test("server-renders the complete HSIMG Graph Explorer", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>HSIMG Graph Explorer<\/title>/i);
-  assert.match(html, /src="\/university-oviedo\.png"/);
+  assert.match(html, /src="university-oviedo\.png"/);
+  assert.match(html, /id="tab-validation" role="tab" aria-selected="false" aria-controls="panel-validation"/);
+  assert.match(html, /id="panel-explorer" role="tabpanel"/);
   assert.match(html, />3D graph</);
   assert.match(html, />2D floor plan</);
   assert.match(html, />Node inspector</);

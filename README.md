@@ -1,6 +1,30 @@
 
 # HSIMG Graph Explorer
 
+## Pestaña Validación
+
+La pestaña **Validación** comparte el modelo cargado con el explorador, pero
+mantiene su propio plano 2D, planta, selección y filtros. Detecta espacios sin
+comunicación, puertas sin acceso a sus lados, salidas de escaleras y ascensores
+sin conexión a planta, tramos verticales desconectados, extremos internos
+para revisar, referencias inválidas y conexiones idénticas repetidas.
+
+**Acceso desde el exterior** colorea cada espacio según exista una ruta dirigida
+desde la puerta elegida, con perfil general o de silla de ruedas. La tabla
+compara todas las puertas exteriores, incluidas las desconectadas. Verde
+significa ruta con atributos conocidos; ámbar, datos insuficientes; rojo,
+ausencia de ruta para ese perfil. Los accesos locales se evalúan por topología.
+
+Las tablas exportan los casos y métricas a CSV. Las etiquetas independientes
+(anomalía real / sin anomalía real) permiten calcular TP, FP, FN, TN, precisión,
+exhaustividad y F1. Sin referencia se muestran valores no calculables. Es
+necesario revisar también casos conformes para identificar falsos negativos.
+Las etiquetas se guardan localmente y se pueden compartir mediante JSON,
+vinculado al SHA-256 del GeoPackage y a la versión de las reglas.
+
+Consulte [criterios, resultados y límites](docs/VALIDATION.md).
+Pruebas del motor y del modelo real: `pnpm test:validation`.
+
 ## Modelo incluido
 
 La carga inicial usa `EPM_IFC_v13_HSIMG_v14.gpkg`, generado a partir de

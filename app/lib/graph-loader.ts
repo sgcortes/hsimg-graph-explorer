@@ -447,8 +447,17 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
   const SQL = await initSqlJs({
     locateFile: () => new URL("sql-wasm.wasm", window.location.href).href,
   });
-  const db = new SQL.Database(new Uint8Array(await file.arrayBuffer())) as unknown as SqlDatabase;
+  const bytes = await file.arrayBuffer();
+  const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (n) => n.toString(16).padStart(2, "0")).join("");
+  const db = new SQL.Database(new Uint8Array(bytes)) as unknown as SqlDatabase;
   try {
+    return readGeoPackage(db, file.name, fingerprint);
+  } finally {
+    db.close();
+  }
+}
+
+export function readGeoPackage(db: SqlDatabase, name: string, fingerprint: string): GraphDataset {
     if (!tableExists(db, "graph_nodes") || !tableExists(db, "graph_edges")) {
       throw new Error("The GeoPackage does not contain the graph_nodes and graph_edges layers.");
     }
@@ -469,7 +478,7 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
             : geometry?.type === "MultiPolygon"
               ? geometry.coordinates
               : [];
-          return polygons.map((rings, index) => ({
+          return (polygons.length ? polygons : [[]]).map((rings, index) => ({
             id: `${String(row.space_id ?? row.ifc_guid ?? "space")}-${index}`,
             spaceNodeId: String(row.space_id ?? row.ifc_guid ?? "space"),
             name: String(row.name ?? row.space_id ?? "Space"),
@@ -498,13 +507,13 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
     const verticalFootprintGeometry = tableExists(db, "vertical_footprints")
       ? geometryColumn(db, "vertical_footprints")
       : "geometry";
-    const featureRows = verticalFootprintRows.length
-      ? verticalFootprintRows
-      : verticalElementRows;
+    // Footprints cover ramps in older exports. Keep the complete stair/lift inventory too.
+    const footprintIds = new Set(verticalFootprintRows.map((row) => String(row.vertical_id)));
+    const featureRows = [...verticalFootprintRows, ...verticalElementRows.filter((row) => !footprintIds.has(String(row.vertical_id)))];
     const verticalFeatures: VerticalFeature[] = featureRows.map((row) => {
       const verticalId = String(row.vertical_id ?? row.ifc_guid ?? "vertical");
       const elementRow = verticalElementsById.get(verticalId) ?? row;
-      const footprintGeometry = verticalFootprintRows.length
+      const footprintGeometry = footprintIds.has(verticalId)
         ? parseGeoPackageGeometry(row[verticalFootprintGeometry])
         : null;
       const pathGeometry = parseGeoPackageGeometry(
@@ -543,6 +552,23 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
       };
     });
     const repaired = repairLegacyStoreys(nodes, edges, spaces);
+    const optionalRows = (table: string) => tableExists(db, table) ? rowsFrom(db, table) : [];
+    const doors = optionalRows("doors").map((row) => {
+      const metadata = { ...parseMetadata(row.metadata_json), ...cleanRaw(row) };
+      const properties = metadata.properties as Record<string, unknown> | undefined;
+      const geometry = parseGeoPackageGeometry(row[geometryColumn(db, "doors")]);
+      const exterior = asBoolean(properties?.["HSIMG.ifc_is_external"] ?? properties?.["Pset_DoorCommon.IsExternal"]) === true || Number(row.inout) === 1;
+      return {
+        id: String(row.door_id), name: String(row.name ?? row.door_id),
+        storeyId: row.storey_id ? String(row.storey_id) : null,
+        spaceIds: [row.connected_space_a, row.connected_space_b].filter(Boolean).map(String),
+        exterior,
+        // Include exterior doors even when their graph connection is missing.
+        entrance: exterior || asBoolean(properties?.["HSIMG.entrance_exit_eligible"]) === true,
+        point: geometry?.type === "Point" ? geometry.coordinates : null,
+        metadata,
+      };
+    });
     const warnings: string[] = [];
     if (repaired.nodes || repaired.spaces) {
       const unassignedSpaces = spaces.filter((space) => !space.storeyId).length;
@@ -563,7 +589,7 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
       );
     }
     return {
-      name: file.name,
+      name,
       sourceType: "gpkg",
       nodes,
       edges,
@@ -571,10 +597,14 @@ async function loadGeoPackage(file: File): Promise<GraphDataset> {
       verticalFeatures,
       storeys,
       warnings,
+      validation: {
+        fingerprint, doors,
+        subgraphs: optionalRows("subgraphs").map((row) => ({ id: String(row.subgraph_id), parentId: String(row.parent_node_id), type: String(row.subgraph_type) })),
+        sourceIssues: optionalRows("validation_issues").map((row) => ({ id: String(row.issue_id), type: String(row.issue_type), severity: String(row.severity), nodeId: String(row.related_node_id ?? ""), ifcGuid: String(row.related_ifc_guid ?? ""), message: String(row.message ?? ""), action: String(row.suggested_action ?? "") })),
+        modelMetadata: cleanRaw(optionalRows("model_metadata")[0] ?? {}),
+        inventory: { spaces: tableExists(db, "spaces"), doors: tableExists(db, "doors"), vertical: tableExists(db, "vertical_elements") },
+      },
     };
-  } finally {
-    db.close();
-  }
 }
 
 function parseJsonAllowingNonFinite(text: string): {

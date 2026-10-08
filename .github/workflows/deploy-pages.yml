@@ -39,6 +39,7 @@ jobs:
         run: |
           pnpm exec tsc -p tsconfig.app.json --noEmit
           pnpm test:graph
+          pnpm test:validation
       - name: Build static site
         run: pnpm build:github
       - name: Configure Pages

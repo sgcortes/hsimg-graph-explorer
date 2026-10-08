@@ -75,6 +75,25 @@ export interface GraphDataset {
   verticalFeatures: VerticalFeature[];
   storeys: StoreyOption[];
   warnings: string[];
+  validation?: {
+    fingerprint: string;
+    doors: DoorRecord[];
+    subgraphs: Array<{ id: string; parentId: string; type: string }>;
+    sourceIssues: Array<{ id: string; type: string; severity: string; nodeId: string; ifcGuid: string; message: string; action: string }>;
+    modelMetadata: Record<string, unknown>;
+    inventory: { spaces: boolean; doors: boolean; vertical: boolean };
+  };
+}
+
+export interface DoorRecord {
+  id: string;
+  name: string;
+  storeyId: string | null;
+  spaceIds: string[];
+  exterior: boolean;
+  entrance: boolean;
+  point: Point3 | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface VisibilityState {
