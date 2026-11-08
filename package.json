@@ -12,6 +12,7 @@
     "build:github": "vite build --config vite.github.config.ts",
     "test:graph": "node --test tests/bundled-graph.test.mjs",
     "test:validation": "node --experimental-strip-types --test tests/validation.test.mjs",
+    "test:mobility": "node --experimental-strip-types --test tests/mobility.test.mjs",
     "start": "vinext start",
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

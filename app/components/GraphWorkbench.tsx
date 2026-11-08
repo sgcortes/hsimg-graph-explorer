@@ -10,6 +10,7 @@ import { FloorPlan2D } from "./FloorPlan2D";
 import { Graph3D } from "./Graph3D";
 import { NodeContext2D } from "./NodeContext2D";
 import { ValidationWorkbench } from "./ValidationWorkbench";
+import { MobilityWorkbench } from "./MobilityWorkbench";
 
 const DEFAULT_VISIBILITY: VisibilityState = {
   finalist: true,
@@ -306,10 +307,13 @@ export function GraphWorkbench() {
       )}
 
       <div className="workbench-tabs" role="tablist" aria-label="Graph tools">
-        {[ ["explorer", "Explorer"], ["validation", "Validation"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const next = e.key === "Home" ? "explorer" : e.key === "End" ? "validation" : activeTab === "explorer" ? "validation" : "explorer"; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
+        {[ ["explorer", "Explorer"], ["validation", "Validation"], ["mobility", "Mobility"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const tabs=['explorer','validation','mobility']; const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs[2] : tabs[(tabs.indexOf(activeTab)+(e.key==='ArrowRight'?1:2))%3]; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
       </div>
       <div id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" hidden={activeTab !== "validation"}>
         {validationOpened && <ValidationWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />}
+      </div>
+      <div id="panel-mobility" role="tabpanel" aria-labelledby="tab-mobility" hidden={activeTab !== "mobility"}>
+        <MobilityWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />
       </div>
       <div id="panel-explorer" role="tabpanel" aria-labelledby="tab-explorer" hidden={activeTab !== "explorer"}>
       <section className="stats-row" aria-label="Graph summary">

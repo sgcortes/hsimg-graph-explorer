@@ -1,5 +1,40 @@
 # HSIMG Graph Explorer
 
+## Mobility analysis
+
+The Mobility tab keeps the loaded graph unchanged and overlays temporary exterior-door
+open/closed states. Restore source states or export the scenario and space results as
+JSON. Scenarios remain active when switching tabs, but reset when loading another model
+or reloading the page.
+
+- Directed Dijkstra preserves exported edge directions. Compare A to B and B to A
+  independently; unequal times can be legitimate rather than an error.
+- Reverse multi-source searches compute each point's minimum time to an open exit.
+  Per-exit searches support full point/exit coverage (also downloadable) and the
+  selected-door time map. Forward searches show spaces reachable from a door.
+- Space time is the maximum over its mapped physical graph members. Any unreachable
+  member makes the whole space incomplete. Missing space members are also unreachable.
+  Door-to-space reachability means at least one member is reached.
+- Semantic parent nodes with physical children are not routing shortcuts. Closed
+  doors and their side nodes block transit. Vehicle-only arcs, excluded spaces and
+  inaccessible profile nodes/edges are excluded; unknown permissions require opt-in.
+- Exterior exits come from the same entrance inventory as Validation. Closed doors
+  remain in the coverage denominator. This is connectivity evidence, not proof of
+  an IFC/BIM defect or confirmation that every classified exterior door is suitable.
+- Exported estimated_time is interpreted in seconds. Missing times use length_3d
+  (or polyline length) divided by the adjustable fallback speed. Elevators are off
+  by default and can be enabled for mobility studies.
+
+Floor colours: red under 1 minute, orange 1–2, yellow 2–3, blue 3–5, purple 5 or
+more, dark grey unreachable, light grey excluded. These are free-flow travel
+estimates, not a validated evacuation simulation: occupancy, queues, bottleneck
+capacity, reaction time, hazards and elevator waiting/dispatch are not simulated.
+No regulatory compliance or actual building clearance time is inferred.
+
+Verification: pnpm test:mobility, pnpm test:validation, pnpm test:graph.
+The real-model regression checks that closing all exits removes all exit routes
+and that closing a single exit cannot reduce travel time.
+
 [Public application](https://sgcortes.github.io/hsimg-graph-explorer/)
 
 A browser application for loading, visualizing and checking the spatial mobility

@@ -918,3 +918,25 @@ h1 {
   .app-footer { flex-direction: column; }
   .view-legend { gap: 5px; padding: 7px 8px; font-size: 9px; }
 }
+.mobility-workbench { padding: 20px 0; color: #243d49; }
+.mobility-workbench h2 { font-size:26px; font-weight:700; margin:0 0 12px; }
+.mobility-workbench h3 { font-size:18px; font-weight:650; margin:20px 0 10px; }
+.mobility-workbench input:not([type="checkbox"]) { border:1px solid #a7bdc7; padding:7px; border-radius:5px; max-width:180px; }
+.mobility-workbench p { line-height: 1.6; }
+.mobility-controls, .mobility-summary { display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin:16px 0; }
+.mobility-summary span { padding:16px; background:#edf5f8; border:1px solid #cadbe3; border-radius:8px; }
+.mobility-layout { display:grid; grid-template-columns:minmax(260px, 320px) minmax(0,1fr); gap:22px; }
+.mobility-layout aside { padding:16px; background:#f5f8fa; border:1px solid #cadbe3; border-radius:10px; }
+.mobility-layout aside label { display:block; margin:10px 0; }
+.mobility-workbench select { max-width:100%; padding:7px; }
+.mobility-layout aside select { width:100%; }
+.mobility-workbench button { padding:7px 12px; border:1px solid #a7bdc7; border-radius:5px; background:white; cursor:pointer; }
+.mobility-door-list { max-height:280px; overflow:auto; }
+.mobility-map { height:620px; border:1px solid #cadbe3; border-radius:10px; overflow:hidden; }
+.mobility-map .viewport-canvas { height:100%; }
+.mobility-table { max-height:420px; overflow:auto; margin:16px 0; }
+.mobility-table table { width:100%; border-collapse:collapse; }
+.mobility-table th,.mobility-table td { padding:10px; text-align:left; border-bottom:1px solid #d9e3e8; }
+.mobility-table th { background:#edf5f8; position:sticky; top:0; }
+.mobility-table tr:hover { background:#f0f7fa; }
+@media(max-width:900px){.mobility-layout{grid-template-columns:1fr}.mobility-map{height:480px}}

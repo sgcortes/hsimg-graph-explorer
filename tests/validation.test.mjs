@@ -149,6 +149,16 @@ test("bundled IFC v13: complete inventories, known stair failures, and reachabil
   assert.equal(data.verticalFeatures.filter((v) => v.verticalType === "elevator").length, 13);
   const result = validateGraph(data);
   const rules = ["space_connection", "door_connection", "stair_floor", "elevator_floor", "vertical_continuity", "edge_integrity", "duplicate_connection", "internal_dead_end"];
+  const { mobilityNetwork, travel } = await import("../app/lib/mobility.ts");
+  const exits = result.entrances.map(e => e.door.id);
+  const options = {wheelchair:false, allowUnknown:false, elevators:false, speed:1.2, doorStates:{}, excluded:new Set([...result.spaceMembers].filter(([id])=>result.scopes.get(id)?.excluded).flatMap(([,ids])=>ids))};
+  const original = travel(mobilityNetwork(data,options).reverse, exits).distance;
+  assert.ok(original.size > 1000);
+  const closed = travel(mobilityNetwork(data,{...options,doorStates:Object.fromEntries(exits.map(id=>[id,false]))}).reverse,exits).distance;
+  assert.equal(closed.size,0,"Closing all exits must eliminate all exit routes in the real model");
+  const oneClosed = travel(mobilityNetwork(data,{...options,doorStates:{[exits[0]]:false}}).reverse,exits).distance;
+  for (const [id,seconds] of oneClosed) assert.ok(seconds >= (original.get(id)??Infinity),"Closing an exit cannot shorten travel");
+  t.diagnostic(JSON.stringify({mobilityReachablePoints:original.size,closedAllReachable:closed.size,worsenedPoints:[...original].filter(([id,s])=>(oneClosed.get(id)??Infinity)>s).length}));
   const counts = Object.fromEntries(rules.map((rule) => [rule, result.cases.filter((c) => c.rule === rule && c.status === "fail").length]));
   t.diagnostic(JSON.stringify({ failures: counts, entrances: result.entrances.length, reach: result.entrances.map((e) => [e.door.id, e.reachable, e.unreachable, e.unknown]) }));
   assert.equal(counts.stair_floor, 3);

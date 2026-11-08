@@ -22,6 +22,11 @@ interface FloorPlan2DProps {
   visibility: VisibilityState;
   linkViews: boolean;
   onSelectNode: (nodeId: string) => void;
+  routeNodeIds?: string[];
+  originNodeId?: string | null;
+  destinationNodeId?: string | null;
+  navigationMode?: boolean;
+  spaceColors?: Map<string, string>;
 }
 
 interface Transform {
@@ -80,6 +85,11 @@ export function FloorPlan2D({
   visibility,
   linkViews,
   onSelectNode,
+  routeNodeIds = [],
+  originNodeId = null,
+  destinationNodeId = null,
+  navigationMode = false,
+  spaceColors,
 }: FloorPlan2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -236,23 +246,23 @@ export function FloorPlan2D({
 
     if (visibility.spaces) {
       for (const space of floorSpaces) {
+        ctx.beginPath();
         for (const ring of space.rings) {
           if (!ring.length) continue;
-          ctx.beginPath();
           ring.forEach((point, index) => {
             const position = screen(point[0], point[1]);
             if (index === 0) ctx.moveTo(position.x, position.y);
             else ctx.lineTo(position.x, position.y);
           });
           ctx.closePath();
-          ctx.fillStyle = space.nodeClass === "horizontal_mobility"
+        }
+          ctx.fillStyle = spaceColors?.get(space.spaceNodeId) ?? (space.nodeClass === "horizontal_mobility"
             ? "rgba(217,119,6,.075)"
-            : "rgba(84,112,124,.035)";
+            : "rgba(84,112,124,.035)");
           ctx.strokeStyle = "rgba(77,103,115,.62)";
           ctx.lineWidth = 1.2;
-          ctx.fill();
+          ctx.fill("evenodd");
           ctx.stroke();
-        }
       }
     }
 
@@ -329,6 +339,29 @@ export function FloorPlan2D({
       }
     }
 
+    if (routeNodeIds.length > 1) {
+      const drawRoute = (color: string, width: number) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        for (let index = 0; index < routeNodeIds.length - 1; index += 1) {
+          const source = nodeById.get(routeNodeIds[index]);
+          const target = nodeById.get(routeNodeIds[index + 1]);
+          if (!source || !target || source.storeyId !== storeyId || target.storeyId !== storeyId) continue;
+          const edge = dataset.edges.find(e => e.source === source.id && e.target === target.id);
+          const points = edge && edge.points.length > 1 ? edge.points : [[source.x, source.y, source.z], [target.x, target.y, target.z]];
+          ctx.beginPath();
+          points.forEach((p, i) => { const point = screen(p[0], p[1]); if (i === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y); });
+          ctx.stroke();
+        }
+      };
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      drawRoute("rgba(17, 122, 106, 0.22)", 11);
+      drawRoute("#117a6a", 4);
+      ctx.restore();
+    }
+
     const screenNodes: Array<{ id: string; x: number; y: number }> = [];
     const visibleNodes = floorNodes
       .filter((node) => nodeVisible(node, visibility))
@@ -343,6 +376,27 @@ export function FloorPlan2D({
       screenNodes.push({ id: node.id, ...position });
     }
     screenNodesRef.current = screenNodes;
+
+    for (const [nodeId, color, label] of [
+      [originNodeId, "#117a6a", "A"],
+      [destinationNodeId, "#d14b42", "B"],
+    ] as const) {
+      const node = nodeId ? nodeById.get(nodeId) : null;
+      if (!node || node.storeyId !== storeyId) continue;
+      const position = screen(node.x, node.y);
+      ctx.beginPath();
+      ctx.arc(position.x, position.y, 12, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 11px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, position.x, position.y + 0.5);
+    }
 
     const selected = floorNodes.find((node) => node.id === selectedNodeId);
     if (selected) {
@@ -360,7 +414,7 @@ export function FloorPlan2D({
       ctx.textAlign = "center";
       ctx.fillText(text, labelX + width / 2, labelY + 16);
     }
-  }, [dataset, floorConceptualLinks, floorEdges, floorNodes, floorSpaces, floorVerticalFeatures, nodeById, selectedNodeId, size, view, visibility]);
+  }, [dataset, destinationNodeId, floorConceptualLinks, floorEdges, floorNodes, floorSpaces, floorVerticalFeatures, nodeById, originNodeId, routeNodeIds, selectedNodeId, size, storeyId, view, visibility, spaceColors]);
 
   const pointerPosition = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -407,7 +461,7 @@ export function FloorPlan2D({
           }));
         }}
       />
-      <GraphLegend />
+      {!navigationMode && <GraphLegend />}
       <div className="canvas-hint">Drag to pan · wheel to zoom · click to inspect</div>
     </div>
   );
