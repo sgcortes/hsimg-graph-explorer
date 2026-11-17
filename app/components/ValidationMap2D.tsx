@@ -8,21 +8,28 @@ import { spaceLabel } from "../lib/validation";
 const COLORS: Record<Status, string> = { fail: "#e63f59", pass: "#30b394", unknown: "#edae35", excluded: "#8f9ba8" };
 const rank = { excluded: -1, pass: 0, unknown: 1, fail: 2 };
 const path = (points: Point3[]) => points.map((p, i) => `${i ? "L" : "M"}${p[0]},${-p[1]}`).join(" ");
-export interface ValidationLayers { graph: boolean; doors: boolean; stairs: boolean; elevators: boolean }
+export interface ValidationLayers { graph: boolean; doors: boolean; stairs: boolean; elevators: boolean; ramps?: boolean; unreachableSpaces?: boolean; doorIssues?: boolean; elevatorIssues?: boolean; rampIssues?: boolean; stairIssues?: boolean }
 
-export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, selected, entranceId, layers, onLayersChange, onSelect }: {
+export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, reachabilityCases = [], selected, entranceId, layers, onLayersChange, onSelect }: {
   dataset: GraphDataset; storeyId: string | null; cases: ValidationCase[];
-  inspectionCases: ValidationCase[]; layers: ValidationLayers; onLayersChange: (layers: ValidationLayers) => void;
+  inspectionCases: ValidationCase[]; reachabilityCases?: ValidationCase[]; layers: ValidationLayers; onLayersChange: (layers: ValidationLayers) => void;
   selected: ValidationCase | null; entranceId?: string; onSelect: (row: ValidationCase) => void;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; box: number[]; scale: number; moved: boolean } | null>(null);
   const [zoom, setZoom] = useState<number[] | null>(null);
+  const [viewport, setViewport] = useState({ width: 700, height: 620 });
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const observer = new ResizeObserver(([entry]) => { if (entry.contentRect.width && entry.contentRect.height) setViewport({width:entry.contentRect.width,height:entry.contentRect.height}); });
+    observer.observe(svgRef.current); return () => observer.disconnect();
+  }, []);
   const nodeById = useMemo(() => new Map(dataset.nodes.map((n) => [n.id, n])), [dataset]);
   const floorSpaces = useMemo(() => dataset.spaces.filter((s) => s.storeyId === storeyId), [dataset, storeyId]);
   const floorNodes = useMemo(() => dataset.nodes.filter((n) => n.storeyId === storeyId), [dataset, storeyId]);
   const elevation = dataset.storeys.find((s) => s.id === storeyId)?.elevation ?? 0;
-  const verticals = dataset.verticalFeatures.filter((v) => v.storeyIds.includes(storeyId ?? "") && (v.verticalType !== "stair" || layers.stairs) && (v.verticalType !== "elevator" || layers.elevators));
+  const verticals = dataset.verticalFeatures.filter((v) => v.storeyIds.includes(storeyId ?? ""));
+  const reachability = useMemo(() => new Map(reachabilityCases.filter(c => c.rule === "entrance_reachability").map(c => [c.entityId, c])), [reachabilityCases]);
   const inspection = useMemo(() => {
     const doors = new Map<string, ValidationCase>(), spaces = new Map<string, ValidationCase>(), vertical = new Map<string, ValidationCase>();
     for (const c of inspectionCases) {
@@ -48,7 +55,8 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, sel
     };
     for (const c of cases) {
       if (c.storeyId && c.storeyId !== storeyId) continue;
-      for (const id of c.spaceIds) put(spaces, id, c);
+      // Door/element problems must NEVER determine the fill of an associated space.
+      if (c.rule === "entrance_reachability") for (const id of c.spaceIds) put(spaces, id, c);
       for (const id of c.nodeIds) put(nodes, id, c);
       for (const id of c.verticalIds) put(vertical, id, c);
     }
@@ -62,6 +70,7 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, sel
     return [x - 3, y - 3, w + 6, h + 6];
   }, [floorNodes, floorSpaces]);
   const box = zoom ?? bounds;
+  const issueRadius = Math.max(1.35, 9 / Math.min(viewport.width / box[2], viewport.height / box[3]));
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -80,7 +89,7 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, sel
   const focus = () => {
     if (!selected) return;
     const points = [
-      ...floorSpaces.filter((s) => selected.spaceIds.includes(s.spaceNodeId)).flatMap((s) => s.rings.flat()),
+      ...floorSpaces.filter((s) => selected.entityId === s.spaceNodeId).flatMap((s) => s.rings.flat()),
       ...selected.nodeIds.map((id) => nodeById.get(id)).filter((n) => n?.storeyId === storeyId).map((n) => [n!.x, n!.y, n!.z] as Point3),
       ...verticals.filter((v) => selected.verticalIds.includes(v.verticalId)).flatMap((v) => v.paths.flat()),
       ...doors.filter((d) => selected.nodeIds.includes(d.id) && d.point).map((d) => d.point!),
@@ -95,10 +104,12 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, sel
   return <div className="validation-map-wrap">
     <div className="validation-map-actions">
       <span>Validation map · drag to pan, wheel to zoom</span>
-      {([["graph", "Context graph"], ["doors", "Doors"], ["stairs", "Stairs"], ["elevators", "Elevators"]] as const).map(([id, label]) => <label key={id}><input type="checkbox" checked={layers[id]} onChange={(e) => onLayersChange({ ...layers, [id]: e.target.checked })} />{label}</label>)}
+      {([["graph", "Context graph"], ["doors", "Doors"], ["stairs", "Stairs"], ["elevators", "Elevators"], ["ramps", "Ramps"]] as const).map(([id, label]) => <label key={id}><input type="checkbox" checked={layers[id] ?? true} onChange={(e) => onLayersChange({ ...layers, [id]: e.target.checked })} />{label}</label>)}
       <button className="secondary-button" onClick={() => setZoom(null)}>Fit floor</button>
       <button className="secondary-button" onClick={focus} disabled={!selected}>Focus selection</button>
     </div>
+    <div className="validation-map-actions" aria-label="Problem layers"><strong>Problem layers</strong>{([["unreachableSpaces", "Unreachable spaces"], ["doorIssues", "Door issues"], ["elevatorIssues", "Elevator issues"], ["rampIssues", "Ramp issues"], ["stairIssues", "Stair issues"]] as const).map(([id,label]) => <label key={id}><input type="checkbox" checked={layers[id] ?? true} onChange={e=>onLayersChange({...layers,[id]:e.target.checked})}/>{label}</label>)}</div>
+    <p className="validation-map-note">{entranceId ? "Space colours: access from the selected exterior door." : "Space colours: access from any exterior entrance."} Pink means no directed route for the selected profile; amber means uncertain permissions. Arrival means reaching at least one interior node. Problem rings are independent of space reachability and table filters.</p>
     <svg ref={svgRef} className="validation-map" viewBox={box.join(" ")} aria-label="Independent 2D validation map" role="img"
       onPointerDown={(e) => { const scale = svgRef.current?.getScreenCTM()?.a ?? 1; drag.current = { x: e.clientX, y: e.clientY, box: [...box], scale, moved: false }; }}
       onPointerMove={(e) => { const d = drag.current; if (!d || !e.buttons) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) { d.moved = true; setZoom([d.box[0] - dx / d.scale, d.box[1] - dy / d.scale, d.box[2], d.box[3]]); } }}
@@ -107,29 +118,36 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, sel
       <title>Spaces, doors and vertical elements by floor. The table provides the same information as text.</title>
       {floorSpaces.map((s) => {
         const scopeCase = inspection.spaces.get(s.spaceNodeId);
-        const row = scopeCase?.status === "excluded" ? scopeCase : maps.spaces.get(s.spaceNodeId), chosen = selected?.spaceIds.includes(s.spaceNodeId);
-        return <path key={s.id} data-layer="space" data-entity-id={s.spaceNodeId} d={s.rings.map((ring) => path(ring) + " Z").join(" ")} fillRule="evenodd" fill={row ? COLORS[row.status] : "#e9eef1"} fillOpacity={row ? 0.5 : 0.6} stroke={chosen ? "#222f88" : "#8198a5"} strokeWidth={chosen ? 3 : 0.7} vectorEffect="non-scaling-stroke" onClick={() => select(row ?? scopeCase)} data-status={row?.status ?? "context"}><title>{`${spaceLabel(s)} · ${row?.detail ?? "Context"}`}</title></path>;
+        const row = scopeCase?.status === "excluded" ? scopeCase : reachability.get(s.spaceNodeId), chosen = selected?.entityId === s.spaceNodeId;
+        const hiddenFailure = row?.status === "fail" && layers.unreachableSpaces === false;
+        const fill = hiddenFailure || !row ? "#e9eef1" : row.status === "fail" ? "#f39bad" : COLORS[row.status];
+        return <path key={s.id} data-layer="space" data-entity-id={s.spaceNodeId} d={s.rings.map((ring) => path(ring) + " Z").join(" ")} fillRule="evenodd" fill={fill} fillOpacity={row?.status === "fail" && !hiddenFailure ? 0.8 : 0.5} stroke={chosen ? "#222f88" : "#8198a5"} strokeWidth={chosen ? 3 : 0.7} vectorEffect="non-scaling-stroke" onClick={() => select(row ?? scopeCase)} data-status={row?.status ?? "context"}><title>{`${spaceLabel(s)} · ${row?.detail ?? "Reachability not evaluated"}`}</title></path>;
       })}
       {layers.graph && dataset.edges.filter((e) => nodeById.get(e.source)?.storeyId === storeyId && nodeById.get(e.target)?.storeyId === storeyId).map((e) => <path key={e.id} data-layer="context" d={path(e.points)} fill="none" stroke="#466276" strokeOpacity=".35" strokeWidth=".7" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
       {verticals.map((v) => {
-        const row = maps.vertical.get(v.verticalId) ?? inspection.vertical.get(v.verticalId), color = row ? COLORS[row.status] : "#82949d";
+        const row = inspection.vertical.get(v.verticalId), color = "#397dc1";
+        const normal = v.verticalType === "elevator" ? layers.elevators : v.verticalType === "stair" ? layers.stairs : layers.ramps !== false;
+        const issue = row?.status === "fail" && (v.verticalType === "elevator" ? layers.elevatorIssues !== false : v.verticalType === "stair" ? layers.stairIssues !== false : layers.rampIssues !== false);
+        if (!normal && !issue) return null;
         const stop = floorNodes.find((n) => n.parentNodeId === v.verticalId && ["landing", "elevator_stop"].includes(n.nodeRole));
-        const point = stop ? [stop.x, stop.y, stop.z] : v.paths.flat().filter((p) => Math.abs(p[2] - elevation) < 0.6)[0] ?? v.paths[0]?.[0];
-        return <g key={v.id} data-layer={v.verticalType} data-entity-id={v.verticalId} onClick={() => select(row)} data-status={row?.status ?? "context"}>
-          {v.paths.map((points, i) => <path key={i} d={path(points)} fill="none" stroke={color} strokeWidth={row?.status === "fail" ? 4 : 2} vectorEffect="non-scaling-stroke" />)}
-          {point && <><circle cx={point[0]} cy={-point[1]} r={0.7} fill={color} stroke={selected?.verticalIds.includes(v.verticalId) ? "#222f88" : "white"} strokeWidth="2" vectorEffect="non-scaling-stroke" /><text x={point[0]} y={-point[1] + 0.23} textAnchor="middle" fontSize=".65" fill="white" fontWeight="700">{v.verticalType === "elevator" ? "E" : v.verticalType === "stair" ? "S" : "R"}</text></>}
+        const point = stop ? [stop.x, stop.y, stop.z] : v.paths.flat().filter((p) => Math.abs(p[2] - elevation) < 0.6)[0] ?? v.paths[0]?.[0] ?? v.rings[0]?.[0];
+        return <g key={v.id} data-layer={normal ? v.verticalType : `${v.verticalType}-issue-only`} data-entity-id={v.verticalId} onClick={() => select(row)} data-status={row?.status ?? "context"}>
+          {normal && v.paths.map((points, i) => <path key={i} d={path(points)} fill="none" stroke={color} strokeWidth={2} vectorEffect="non-scaling-stroke" />)}
+          {point && <>{normal && <><circle cx={point[0]} cy={-point[1]} r={0.7} fill={color} stroke={selected?.verticalIds.includes(v.verticalId) ? "#222f88" : "white"} strokeWidth="2" vectorEffect="non-scaling-stroke" /><text x={point[0]} y={-point[1] + 0.23} textAnchor="middle" fontSize=".65" fill="white" fontWeight="700">{v.verticalType === "elevator" ? "E" : v.verticalType === "stair" ? "S" : "R"}</text></>}{issue && <circle data-layer={`${v.verticalType}-issue`} role="button" tabIndex={0} aria-label={`${v.verticalType} issue: ${row!.detail}`} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(row!);}}} cx={point[0]} cy={-point[1]} r={issueRadius} fill="transparent" stroke="#d7193f" strokeWidth="3" vectorEffect="non-scaling-stroke" />}</>}
           <title>{`${v.verticalType} · ${v.verticalId} · ${row?.detail ?? "Context"}`}</title>
         </g>;
       })}
       {floorNodes.filter((n) => { const r = maps.nodes.get(n.id); return r && (r.status !== "pass" || selected?.nodeIds.includes(n.id)) && !r.verticalIds.length && !r.spaceIds.length && !["door", "door_access"].includes(n.nodeType) && !["stair", "elevator", "ramp"].includes(n.mobilityType ?? ""); }).map((n) => <circle key={n.id} cx={n.x} cy={-n.y} r={0.38} fill={COLORS[maps.nodes.get(n.id)!.status]} stroke={selected?.nodeIds.includes(n.id) ? "#222f88" : "white"} strokeWidth="1.5" vectorEffect="non-scaling-stroke" onClick={() => select(maps.nodes.get(n.id))}><title>{`Node · ${n.id} · ${maps.nodes.get(n.id)?.detail}`}</title></circle>)}
-      {layers.doors && doors.filter((d) => d.point).map((d) => {
+      {doors.filter((d) => d.point).map((d) => {
         const row = inspection.doors.get(d.id);
-        return <rect key={d.id} data-layer="door" data-entity-id={d.id} data-status={row?.status ?? "context"} x={d.point![0] - .36} y={-d.point![1] - .36} width=".72" height=".72" rx=".08" fill={row ? COLORS[row.status] : "#397dc1"} stroke={selected?.entityId === d.id ? "#222f88" : d.exterior ? "#c98700" : "white"} strokeWidth={d.exterior ? "2" : "1.2"} vectorEffect="non-scaling-stroke" onClick={() => select(row)}><title>{`Door · ${d.id} · ${row?.detail ?? "No local check available"}${!nodeById.has(d.id) ? " · Inventoried door without a graph node" : ""}`}</title></rect>;
+        const issue = row?.status === "fail" && layers.doorIssues !== false;
+        if (!layers.doors && !issue) return null;
+        return <g key={d.id} data-entity-id={d.id} onClick={()=>select(row)}><title>{`Door · ${d.id} · ${row?.detail ?? "No local check available"}${!nodeById.has(d.id) ? " · Inventoried door without a graph node" : ""}`}</title>{layers.doors && <rect data-layer="door" data-entity-id={d.id} data-status={row?.status ?? "context"} x={d.point![0] - .36} y={-d.point![1] - .36} width=".72" height=".72" rx=".08" fill="#397dc1" stroke={selected?.entityId === d.id ? "#222f88" : d.exterior ? "#c98700" : "white"} strokeWidth={d.exterior ? "2" : "1.2"} vectorEffect="non-scaling-stroke" />}{issue && <circle data-layer="door-issue" role="button" tabIndex={0} aria-label={`Door issue: ${row!.detail}`} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect(row!);}}} cx={d.point![0]} cy={-d.point![1]} r={issueRadius} fill="transparent" stroke="#d7193f" strokeWidth="3" vectorEffect="non-scaling-stroke" />}</g>;
       })}
       {layers.doors && entrance?.point && <g data-layer="origin"><circle cx={entrance.point[0]} cy={-entrance.point[1]} r="1" fill="#182961" stroke="white" strokeWidth="2" vectorEffect="non-scaling-stroke" /><text x={entrance.point[0]} y={-entrance.point[1] + .28} textAnchor="middle" fontSize=".85" fill="white">D</text><title>Selected exterior door</title></g>}
     </svg>
-    <div className="validation-legend"><span><i style={{ background: COLORS.fail }} /> Issue / unreachable</span><span><i style={{ background: COLORS.pass }} /> Pass / reachable</span><span><i style={{ background: COLORS.unknown }} /> Unknown</span><span><i style={{ background: COLORS.excluded }} /> Excluded by scope</span><span><i style={{ background: "#e9eef1" }} /> Unchecked context</span><span>Square: door · gold outline: exterior</span><span>E: elevator · S: stair · R: ramp · D: origin</span></div>
-    <p className="validation-map-note">Door and vertical-element colours show their local connection checks. Layer switches control visibility only; the context graph is independent and results are unchanged.</p>
+    <div className="validation-legend"><span><i style={{ background: "#f39bad" }} /> Unreachable space</span><span><i style={{ border: "3px solid #d7193f", borderRadius: "50%", background: "transparent" }} /> Element issue (select ring)</span><span><i style={{ background: COLORS.pass }} /> Reachable space</span><span><i style={{ background: COLORS.unknown }} /> Unknown reachability</span><span><i style={{ background: COLORS.excluded }} /> Excluded by scope</span><span><i style={{ background: "#e9eef1" }} /> Unchecked / hidden highlight</span><span>Square: door · gold outline: exterior</span><span>E: elevator · S: stair · R: ramp · D: origin</span></div>
+    <p className="validation-map-note">Red rings show local element issues, not inaccessible spaces. Normal layers and problem layers can be toggled independently. Turning off Unreachable spaces removes the pink highlight but keeps the floor outline. Source checks and routing results are unchanged.</p>
     {layers.doors && doors.some((d) => !d.point) && <p className="validation-note">{doors.filter((d) => !d.point).length} doors have no coordinates and are listed in the table only.</p>}
     {!floorSpaces.length && <p className="validation-note">This floor has no space polygons. Available nodes and paths are shown.</p>}
   </div>;

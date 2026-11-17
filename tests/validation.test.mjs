@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 import initSqlJs from "sql.js";
-import { validateGraph, metrics, importReference, csvRows, spaceScope, readScopeOverrides, VALIDATION_VERSION } from "../app/lib/validation.ts";
+import { validateGraph, overviewReachability, metrics, importReference, csvRows, spaceScope, readScopeOverrides, VALIDATION_VERSION } from "../app/lib/validation.ts";
 
 const node = (id, props = {}) => ({ id, name: id, x: 0, y: 0, z: 0, nodeType: "internal_mobility", nodeRole: "axis_junction", mobilityType: "horizontal", parentNodeId: null, subgraphId: null, hierarchyLevel: 2, storeyId: "L0", accessibleGeneral: true, accessibleWheelchair: true, category: "internal", metadata: {}, raw: {}, ...props });
 const edge = (source, target, props = {}) => ({ id: `${source}-${target}`, source, target, edgeType: "connection", mobilityMode: "walk", subgraphId: null, points: [[0, 0, 0], [1, 0, 0]], accessibleGeneral: true, accessibleWheelchair: true, metadata: {}, raw: {}, ...props });
@@ -13,6 +13,18 @@ const door = (id, exterior = true, spaceIds = []) => ({ id, name: id, storeyId: 
 function dataset(nodes, edges, spaces = [], doors = [], verticalFeatures = []) {
   return { name: "test", sourceType: "gpkg", nodes, edges, spaces, verticalFeatures, storeys: [{ id: "L0", elevation: 0, label: "Ground" }, { id: "L1", elevation: 3, label: "First" }], warnings: [], validation: { fingerprint: "test-sha", doors, subgraphs: [], sourceIssues: [], modelMetadata: {}, inventory: { spaces: true, doors: true, vertical: true } } };
 }
+test("overview distinguishes reachable spaces with door issues, isolation and unknown permissions", () => {
+  const data=dataset([node('entry',{nodeType:'door'}),node('bad',{nodeType:'door'}),node('hall',{nodeType:'space'}),node('island',{nodeType:'space'}),node('uncertain',{nodeType:'space'})],[edge('entry','hall'),edge('bad','hall'),edge('entry','uncertain',{accessibleGeneral:null})],[space('hall'),space('island'),space('uncertain')],[door('entry',true,['hall']),door('bad',false,['hall'])]);
+  const result=validateGraph(data), rows=overviewReachability(result);
+  assert.equal(result.cases.find(c=>c.rule==='door_connection'&&c.entityId==='bad').status,'fail');
+  assert.match(result.cases.find(c=>c.rule==='door_connection'&&c.entityId==='bad').detail,/incomplete space associations/);
+  assert.equal(rows.find(c=>c.entityId==='hall').status,'pass');
+  assert.equal(rows.find(c=>c.entityId==='island').status,'fail');
+  assert.equal(rows.find(c=>c.entityId==='uncertain').status,'unknown');
+  data.validation.doors=[];
+  assert.ok(overviewReachability(validateGraph(data)).every(c=>c.status==='unknown'));
+});
+
 test("horizontal semantic parent is not an isolated space; omitted space is detected", () => {
   const data = dataset([node("hall", { nodeType: "space", nodeRole: "semantic_parent" }), node("axis", { parentNodeId: "hall" }), node("door", { nodeType: "door" })], [edge("door", "axis")], [space("hall"), space("missing")]);
   const result = validateGraph(data);
@@ -129,6 +141,20 @@ test("validation map shows normal and omitted doors and independent vertical lay
   const elevatorOnly = render({ graph: true, doors: false, stairs: false, elevators: true });
   assert.match(elevatorOnly, /data-layer="elevator"/);
   assert.doesNotMatch(elevatorOnly, /data-layer="stair"|data-layer="door"/);
+  // A local door failure must not leak into the space fill; rings remain independent.
+  data.validation.doors[0].exterior=false;
+  data.verticalFeatures.push(vertical('ramp','ramp'));
+  const result=validateGraph(data);
+  const reachable=overviewReachability(result);
+  const renderProblems=(layers,rows=reachable)=>renderToStaticMarkup(createElement(ValidationMap2D,{dataset:data,storeyId:'L0',cases:result.cases,inspectionCases:result.cases,reachabilityCases:rows,selected:null,layers,onLayersChange(){},onSelect(){}}));
+  const problems=renderProblems({doors:false,stairs:false,elevators:false,ramps:false});
+  assert.match(problems,/data-layer="space" data-entity-id="s"[^>]*fill="#30b394"[^>]*data-status="pass"/);
+  for(const kind of ['door','elevator','ramp','stair']) assert.match(problems,new RegExp(`data-layer="${kind}-issue"`));
+  const noProblems=renderProblems({doors:true,stairs:true,elevators:true,ramps:true,doorIssues:false,elevatorIssues:false,rampIssues:false,stairIssues:false});
+  assert.doesNotMatch(noProblems,/data-layer="(door|elevator|ramp|stair)-issue"/);
+  const failed=reachable.map(c=>({...c,status:'fail'}));
+  assert.match(renderProblems({},failed),/data-layer="space"[^>]*fill="#f39bad"/);
+  assert.match(renderProblems({unreachableSpaces:false},failed),/data-layer="space"[^>]*fill="#e9eef1"/);
 });
 
 test("bundled IFC v13: complete inventories, known stair failures, and reachability", async (t) => {

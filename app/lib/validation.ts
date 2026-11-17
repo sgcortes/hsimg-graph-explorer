@@ -95,6 +95,21 @@ function caseFor(rule: string, entityId: string, label: string, storeyId: string
   return { id: key(rule, entityId, storeyId), rule, entityId, label, storeyId, status, detail, nodeIds: [], spaceIds: [], verticalIds: [], ...extra };
 }
 
+// Overview colours describe arrival from ANY exterior entrance, never local door checks.
+// Keep these derived map summaries separate from independent-reference metrics.
+export function overviewReachability(result: ValidationResult): ValidationCase[] {
+  const grouped = new Map<string, ValidationCase[]>();
+  for (const entrance of result.entrances) for (const row of entrance.cases) grouped.set(row.entityId, [...grouped.get(row.entityId) ?? [], row]);
+  return result.cases.filter(c => c.rule === "space_connection").map(space => {
+    const rows = grouped.get(space.entityId) ?? [];
+    const reached = rows.filter(c => c.status === "pass").length;
+    const uncertain = rows.some(c => c.status === "unknown");
+    const status: Status = space.status === "excluded" ? "excluded" : reached ? "pass" : uncertain || !rows.length ? "unknown" : "fail";
+    const detail = status === "excluded" ? space.detail : !rows.length ? "No exterior entrance inventory is available. Reachability cannot be evaluated." : reached ? `Reachable from ${reached}/${rows.length} exterior entrances for the selected profile. Local door or vertical-element issues do not make this space unreachable.` : uncertain ? "No confirmed access route; a route may exist if unknown permissions are accepted." : `No directed access route from any of the ${rows.length} exterior entrances for the selected profile. Review permissions, directions and missing connections. This is a graph result, not proof of a BIM defect.`;
+    return { ...space, id: `overview-reach:${space.entityId}`, rule: "entrance_reachability", status, detail };
+  });
+}
+
 export function validateGraph(dataset: GraphDataset, profile: Profile = "general", overrides: ScopeOverrides = {}): ValidationResult {
   const nodes = new Map(dataset.nodes.map((n) => [n.id, n]));
   const children = new Map<string, GraphNode[]>();
@@ -155,15 +170,17 @@ export function validateGraph(dataset: GraphDataset, profile: Profile = "general
     const linkedSpaces = [...new Set(door.spaceIds)];
     // Stay within this portal, its sides and the associated space: no detour via another door.
     let connected = 0;
+    const missing: string[] = [];
     for (const spaceId of linkedSpaces) {
       const targets = new Set(spaceMembers.get(spaceId) ?? []);
       const allowed = new Set([door.id, ...targets, ...(children.get(door.id) ?? []).filter((n) => String(n.metadata.space_id) === spaceId).map((n) => n.id)]);
       const seen = new Set([door.id]), queue = [door.id];
       for (let i = 0; i < queue.length; i++) for (const next of floor.get(queue[i]) ?? []) if (allowed.has(next) && !seen.has(next)) { seen.add(next); queue.push(next); }
-      if ([...targets].some((id) => seen.has(id))) connected++;
+      if ([...targets].some((id) => seen.has(id))) connected++; else missing.push(spaceId);
     }
     const enough = linkedSpaces.length >= (door.exterior ? 1 : 2);
-    cases.push(caseFor("door_connection", door.id, `Door · ${door.id}`, door.storeyId, nodes.has(door.id) && enough && connected === linkedSpaces.length ? "pass" : "fail", `${connected}/${linkedSpaces.length} associated sides reach the interior locally. Expected: ${door.exterior ? "at least 1 associated space for an exterior door" : "at least 2 associated spaces for an interior door"}.`, { nodeIds: [door.id], spaceIds: linkedSpaces }));
+    const detail = [!nodes.has(door.id) ? "The inventoried door has no graph node." : "", !enough ? `${door.exterior ? "Exterior" : "Interior"} door with incomplete space associations: ${linkedSpaces.length} identified; at least ${door.exterior ? 1 : 2} required.` : "", `${connected}/${linkedSpaces.length} associated spaces have a local connection through this door.`, missing.length ? `Missing local connection to: ${missing.map(id => spaces.get(id)?.name ? `${spaces.get(id)!.name} (${id})` : id).join(", ")}.` : "", "This door check does not determine whether the space is reachable through other doors."].filter(Boolean).join(" ");
+    cases.push(caseFor("door_connection", door.id, `Door · ${door.id}`, door.storeyId, nodes.has(door.id) && enough && connected === linkedSpaces.length ? "pass" : "fail", detail, { nodeIds: [door.id], spaceIds: linkedSpaces }));
   }
   const allSpaceTargets = new Map<string, string>();
   for (const [spaceId, members] of spaceMembers) if (!scopes.get(spaceId)?.excluded) for (const id of members) allSpaceTargets.set(id, spaceId);
