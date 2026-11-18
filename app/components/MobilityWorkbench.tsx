@@ -4,14 +4,15 @@ import type { GraphDataset, VisibilityState } from '../lib/types';
 import { nodeDisplayLabel } from '../lib/types';
 import { validateGraph } from '../lib/validation';
 import { doorOpen, mobilityNetwork, travel, routePath, TIME_BANDS, timeColor } from '../lib/mobility';
+import type { PlanCameraProps } from '../lib/plan-camera';
 import { FloorPlan2D } from './FloorPlan2D';
 
 const visibility: VisibilityState = { finalist:true, mobility:true, verticalMobility:true, internal:true, access:true, exteriorDoors:true, doorSides:false, edges:false, spaces:true };
 const fmt = (n:number) => Number.isFinite(n) ? `${(n/60).toFixed(2)} min` : 'Unreachable';
-export function MobilityWorkbench({dataset}:{dataset:GraphDataset}) {
+export function MobilityWorkbench({dataset,storeyId:floor,onStoreyChange:setFloor,camera,onCameraChange}:PlanCameraProps & {dataset:GraphDataset;storeyId:string|null;onStoreyChange:(id:string|null)=>void}) {
   const [wheelchair,setWheelchair]=useState(false), [unknown,setUnknown]=useState(false), [elevators,setElevators]=useState(false);
   const [speed,setSpeed]=useState(1.2), [states,setStates]=useState<Record<string,boolean>>({});
-  const [floor,setFloor]=useState(dataset.storeys[0]?.id??null), [selected,setSelected]=useState<string|null>(null);
+  const [selected,setSelected]=useState<string|null>(null);
   const [origin,setOrigin]=useState(''), [destination,setDestination]=useState(''), [pick,setPick]=useState<'origin'|'destination'>('origin');
   const [doorId,setDoorId]=useState(''), [mode,setMode]=useState('evacuation'), [query,setQuery]=useState('');
   const nodeById=useMemo(()=>new Map(dataset.nodes.map(n=>[n.id,n])),[dataset]);
@@ -81,7 +82,7 @@ export function MobilityWorkbench({dataset}:{dataset:GraphDataset}) {
       {origin&&destination&&<p aria-live="polite">A → B: {fmt(outgoing)} · B → A: {fmt(returning)}. {Number.isFinite(outgoing)&&Number.isFinite(returning)?`Difference: ${Math.abs(outgoing-returning).toFixed(2)} s. ${Math.abs(outgoing-returning)<.01?'Symmetric.':'Asymmetric: review directions, costs and restrictions.'}`:'Missing route in at least one direction.'}</p>}
     </aside><div>
       <div className="mobility-controls"><label>Floor <select value={floor??''} onChange={e=>setFloor(e.target.value)}>{dataset.storeys.map(s=><option value={s.id} key={s.id}>{s.label}</option>)}</select></label><label>Map <select value={mode} onChange={e=>setMode(e.target.value)}><option value="evacuation">Time to nearest open exit</option><option value="to-exit">Time to selected exterior door</option><option value="from-door">Reachability from selected door</option></select></label></div>
-      <div className="mobility-map"><FloorPlan2D key={floor} dataset={dataset} storeyId={floor} selectedNodeId={selected} visibility={visibility} linkViews={false} onSelectNode={choose} routeNodeIds={route} originNodeId={origin} destinationNodeId={destination} navigationMode spaceColors={colors}/></div>
+      <div className="mobility-map"><FloorPlan2D key={floor} dataset={dataset} storeyId={floor} camera={camera} onCameraChange={onCameraChange} selectedNodeId={selected} visibility={visibility} linkViews={false} onSelectNode={choose} routeNodeIds={route} originNodeId={origin} destinationNodeId={destination} navigationMode spaceColors={colors}/></div>
       <div className="mobility-controls">{(mode!=='from-door'?TIME_BANDS:[['Reachable','#86efac'],['Unreachable','#374151'],['Excluded','#d1d5db']]).map(([label,color])=><span key={label}><i style={{background:color,display:'inline-block',width:14,height:14,marginRight:5}}/>{label}</span>)}</div>
       <p>Red means under one minute, as requested; colours encode travel bands, not safety certification. The green line shows A → B on the current floor.</p>
     </div></div>

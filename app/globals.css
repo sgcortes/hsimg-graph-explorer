@@ -671,6 +671,12 @@ h1 {
 .floor-plan canvas { cursor: grab; }
 .floor-plan canvas:active { cursor: grabbing; }
 
+.map-zoom-controls { position: absolute; top: 10px; left: 10px; z-index: 4; display: flex; gap: 5px; }
+.map-zoom-controls button { min-width: 36px; height: 36px; padding: 0 10px; border: 1px solid #9fb5c2; border-radius: 6px; background: #fff; color: #193c50; font-size: 18px; font-weight: 700; box-shadow: 0 2px 5px #163a5014; cursor: pointer; }
+.map-zoom-controls button:hover { background: #eaf5f5; }
+.map-zoom-controls button:focus-visible { outline: 3px solid #008c95; outline-offset: 2px; }
+.viewport-canvas, .validation-map { overscroll-behavior: contain; }
+
 .canvas-hint,
 .context-mode {
   position: absolute;

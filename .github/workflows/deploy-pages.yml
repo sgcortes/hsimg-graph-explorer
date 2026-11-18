@@ -41,6 +41,7 @@ jobs:
           pnpm test:graph
           pnpm test:validation
           pnpm test:mobility
+          node --experimental-strip-types --test tests/plan-camera.test.mjs
       - name: Build static site
         run: pnpm build:github
       - name: Configure Pages

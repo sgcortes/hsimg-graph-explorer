@@ -5,6 +5,7 @@ import type { GraphDataset } from "../lib/types";
 import { caseExplanation, csvRows, importReference, metrics, overviewReachability, readScopeOverrides, RULES, STATUS_LABEL, summarize, validateGraph, VALIDATION_VERSION } from "../lib/validation";
 import type { Profile, ReferenceLabels, ScopeOverrides, ValidationCase } from "../lib/validation";
 import { ValidationMap2D } from "./ValidationMap2D";
+import type { PlanCameraProps } from "../lib/plan-camera";
 import type { ValidationLayers } from "./ValidationMap2D";
 
 function download(name: string, contents: string, type: string) {
@@ -15,11 +16,10 @@ function download(name: string, contents: string, type: string) {
 const number = (value: number | null) => value === null ? "—" : value.toFixed(3);
 const PAGE_SIZE = 40;
 
-export function ValidationWorkbench({ dataset }: { dataset: GraphDataset }) {
+export function ValidationWorkbench({ dataset, storeyId, onStoreyChange: setStoreyId, camera, onCameraChange }: PlanCameraProps & { dataset: GraphDataset; storeyId: string | null; onStoreyChange: (id: string | null) => void }) {
   const [profile, setProfile] = useState<Profile>("general");
   const [mode, setMode] = useState<"issues" | "reach">("issues");
   const [rule, setRule] = useState("");
-  const [storeyId, setStoreyId] = useState<string | null>(dataset.storeys.find((s) => Math.abs(s.elevation) < .1)?.id ?? dataset.storeys[0]?.id ?? null);
   const [entranceId, setEntranceId] = useState("");
   const [status, setStatus] = useState("fail");
   const [query, setQuery] = useState("");
@@ -105,7 +105,7 @@ export function ValidationWorkbench({ dataset }: { dataset: GraphDataset }) {
     </div>
     {mode === "reach" && <div className="validation-reach-summary" aria-live="polite"><strong>{entrance ? `${entrance.reachable} reachable · ${entrance.unreachable} unreachable · ${entrance.unknown} unknown · ${entrance.excluded} excluded` : "No exterior doors identified"}</strong><span>Whole building · {profile} profile. Arrival means reaching at least one interior node, not every part of a space.</span></div>}
     <div className="validation-map-grid">
-      <ValidationMap2D key={`${fingerprint ?? dataset.name}:${storeyId}`} dataset={dataset} storeyId={storeyId} cases={viewCases} inspectionCases={result.cases} reachabilityCases={mode === "reach" ? entrance?.cases ?? [] : overview} selected={selected} entranceId={mode === "reach" ? entrance?.door.id : undefined} layers={layers} onLayersChange={setLayers} onSelect={select} />
+      <ValidationMap2D key={`${fingerprint ?? dataset.name}:${storeyId}`} dataset={dataset} storeyId={storeyId} camera={camera} onCameraChange={onCameraChange} cases={viewCases} inspectionCases={result.cases} reachabilityCases={mode === "reach" ? entrance?.cases ?? [] : overview} selected={selected} entranceId={mode === "reach" ? entrance?.door.id : undefined} layers={layers} onLayersChange={setLayers} onSelect={select} />
       <aside className="validation-inspector" aria-label="Validation details">
         <p className="eyebrow">INSPECTOR</p><h3>{selected?.label ?? "Select a space or element"}</h3>
         {selected ? <><span className={`validation-badge ${selected.status}`}>{STATUS_LABEL[selected.status]}</span><h4>Evidence</h4><p>{selected.detail}</p><h4>What this means</h4><p>{explanation?.interpretation}</p><h4>Recommended review</h4><p>{explanation?.action}</p><dl><dt>Check</dt><dd>{RULES[selected.rule]?.label}</dd><dt>Identifier</dt><dd><code>{selected.entityId}</code></dd><dt>Floor</dt><dd>{floorLabel(selected.storeyId)}</dd></dl><details><summary>Check criterion</summary><p>{RULES[selected.rule]?.criterion}</p></details>

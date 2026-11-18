@@ -4,20 +4,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphDataset, Point3 } from "../lib/types";
 import type { Status, ValidationCase } from "../lib/validation";
 import { spaceLabel } from "../lib/validation";
+import { fitPlan, planViewBox, zoomPlan } from "../lib/plan-camera";
+import type { PlanCamera, PlanCameraProps } from "../lib/plan-camera";
 
 const COLORS: Record<Status, string> = { fail: "#e63f59", pass: "#30b394", unknown: "#edae35", excluded: "#8f9ba8" };
 const rank = { excluded: -1, pass: 0, unknown: 1, fail: 2 };
 const path = (points: Point3[]) => points.map((p, i) => `${i ? "L" : "M"}${p[0]},${-p[1]}`).join(" ");
 export interface ValidationLayers { graph: boolean; doors: boolean; stairs: boolean; elevators: boolean; ramps?: boolean; unreachableSpaces?: boolean; doorIssues?: boolean; elevatorIssues?: boolean; rampIssues?: boolean; stairIssues?: boolean }
 
-export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, reachabilityCases = [], selected, entranceId, layers, onLayersChange, onSelect }: {
+export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, reachabilityCases = [], selected, entranceId, layers, onLayersChange, onSelect, camera: sharedCamera, onCameraChange }: PlanCameraProps & {
   dataset: GraphDataset; storeyId: string | null; cases: ValidationCase[];
   inspectionCases: ValidationCase[]; reachabilityCases?: ValidationCase[]; layers: ValidationLayers; onLayersChange: (layers: ValidationLayers) => void;
   selected: ValidationCase | null; entranceId?: string; onSelect: (row: ValidationCase) => void;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; box: number[]; scale: number; moved: boolean } | null>(null);
-  const [zoom, setZoom] = useState<number[] | null>(null);
+  const [localCamera, setLocalCamera] = useState<PlanCamera>();
   const [viewport, setViewport] = useState({ width: 700, height: 620 });
   useEffect(() => {
     if (!svgRef.current) return;
@@ -69,23 +71,32 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, rea
     const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(2, Math.max(...xs) - x), h = Math.max(2, Math.max(...ys) - y);
     return [x - 3, y - 3, w + 6, h + 6];
   }, [floorNodes, floorSpaces]);
-  const box = zoom ?? bounds;
+  const fitted = fitPlan(bounds[0] + 3, -bounds[1] - bounds[3] + 3, bounds[0] + bounds[2] - 3, -bounds[1] - 3, viewport.width, viewport.height);
+  const camera = sharedCamera ?? localCamera ?? fitted;
+  const changeCamera = (value: PlanCamera) => { if (onCameraChange) onCameraChange(value); else setLocalCamera(value); };
+  const box = planViewBox(camera, viewport.width, viewport.height);
+  useEffect(() => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!sharedCamera && !localCamera && rect?.width && rect.height) {
+      changeCamera(fitPlan(bounds[0] + 3, -bounds[1] - bounds[3] + 3, bounds[0] + bounds[2] - 3, -bounds[1] - 3, rect.width, rect.height));
+    }
+  }, [sharedCamera, localCamera, bounds, viewport]);
   const issueRadius = Math.max(1.35, 9 / Math.min(viewport.width / box[2], viewport.height / box[3]));
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
+      event.stopPropagation();
       const matrix = svg.getScreenCTM();
       if (!matrix) return;
       const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
       const scale = event.deltaY > 0 ? 1.18 : 1 / 1.18;
-      if (box[2] * scale < 2 || box[2] * scale > bounds[2] * 8) return;
-      setZoom([p.x + (box[0] - p.x) * scale, p.y + (box[1] - p.y) * scale, box[2] * scale, box[3] * scale]);
+      changeCamera(zoomPlan(camera, scale, (p.x - camera.x) / camera.unitsPerPixel, (p.y + camera.y) / camera.unitsPerPixel));
     };
     svg.addEventListener("wheel", wheel, { passive: false });
     return () => svg.removeEventListener("wheel", wheel);
-  }, [box, bounds]);
+  }, [camera, onCameraChange]);
   const focus = () => {
     if (!selected) return;
     const points = [
@@ -97,22 +108,24 @@ export function ValidationMap2D({ dataset, storeyId, cases, inspectionCases, rea
     if (!points.length) return;
     const xs = points.map((p) => p[0]), ys = points.map((p) => -p[1]);
     const x = Math.min(...xs), y = Math.min(...ys);
-    setZoom([x - 3, y - 3, Math.max(8, Math.max(...xs) - x + 6), Math.max(8, Math.max(...ys) - y + 6)]);
+    changeCamera(fitPlan(x - 3, -Math.max(...ys) - 3, Math.max(...xs) + 3, -y + 3, viewport.width, viewport.height));
   };
   const select = (row: ValidationCase | undefined) => { if (row && !drag.current?.moved) onSelect(row); };
   const entrance = doors.find((d) => d.id === entranceId);
   return <div className="validation-map-wrap">
     <div className="validation-map-actions">
-      <span>Validation map · drag to pan, wheel to zoom</span>
+      <span>Validation map · drag to pan · + / − or wheel to zoom</span>
       {([["graph", "Context graph"], ["doors", "Doors"], ["stairs", "Stairs"], ["elevators", "Elevators"], ["ramps", "Ramps"]] as const).map(([id, label]) => <label key={id}><input type="checkbox" checked={layers[id] ?? true} onChange={(e) => onLayersChange({ ...layers, [id]: e.target.checked })} />{label}</label>)}
-      <button className="secondary-button" onClick={() => setZoom(null)}>Fit floor</button>
+      <button className="secondary-button" aria-label="Zoom in 2D" title="Zoom in" onClick={() => changeCamera(zoomPlan(camera, 1 / 1.35))}>+</button>
+      <button className="secondary-button" aria-label="Zoom out 2D" title="Zoom out" onClick={() => changeCamera(zoomPlan(camera, 1.35))}>−</button>
+      <button className="secondary-button" onClick={() => changeCamera(fitted)}>Fit floor</button>
       <button className="secondary-button" onClick={focus} disabled={!selected}>Focus selection</button>
     </div>
     <div className="validation-map-actions" aria-label="Problem layers"><strong>Problem layers</strong>{([["unreachableSpaces", "Unreachable spaces"], ["doorIssues", "Door issues"], ["elevatorIssues", "Elevator issues"], ["rampIssues", "Ramp issues"], ["stairIssues", "Stair issues"]] as const).map(([id,label]) => <label key={id}><input type="checkbox" checked={layers[id] ?? true} onChange={e=>onLayersChange({...layers,[id]:e.target.checked})}/>{label}</label>)}</div>
     <p className="validation-map-note">{entranceId ? "Space colours: access from the selected exterior door." : "Space colours: access from any exterior entrance."} Pink means no directed route for the selected profile; amber means uncertain permissions. Arrival means reaching at least one interior node. Problem rings are independent of space reachability and table filters.</p>
-    <svg ref={svgRef} className="validation-map" viewBox={box.join(" ")} aria-label="Independent 2D validation map" role="img"
+    <svg ref={svgRef} className="validation-map" viewBox={box.join(" ")} data-camera={JSON.stringify(camera)} aria-label="Independent 2D validation map" role="img"
       onPointerDown={(e) => { const scale = svgRef.current?.getScreenCTM()?.a ?? 1; drag.current = { x: e.clientX, y: e.clientY, box: [...box], scale, moved: false }; }}
-      onPointerMove={(e) => { const d = drag.current; if (!d || !e.buttons) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) { d.moved = true; setZoom([d.box[0] - dx / d.scale, d.box[1] - dy / d.scale, d.box[2], d.box[3]]); } }}
+      onPointerMove={(e) => { const d = drag.current; if (!d || !e.buttons) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) { d.moved = true; changeCamera({ x: d.box[0] + d.box[2] / 2 - dx / d.scale, y: -(d.box[1] + d.box[3] / 2) + dy / d.scale, unitsPerPixel: 1 / d.scale }); } }}
       onPointerUp={() => { setTimeout(() => { drag.current = null; }, 0); }}
       onPointerLeave={() => { drag.current = null; }}>
       <title>Spaces, doors and vertical elements by floor. The table provides the same information as text.</title>

@@ -125,6 +125,7 @@ test("validation map shows normal and omitted doors and independent vertical lay
   let js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   for (const id of ["react", "react/jsx-runtime"]) js = js.replaceAll(`from "${id}"`, `from "${import.meta.resolve(id)}"`);
   js = js.replaceAll('from "../lib/validation"', `from "${new URL("../app/lib/validation.ts", import.meta.url).href}"`);
+  js = js.replaceAll('from "../lib/plan-camera"', `from "${new URL("../app/lib/plan-camera.ts", import.meta.url).href}"`);
   const { ValidationMap2D } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
   const vertical = (id, kind) => ({ id, verticalId: id, name: id, verticalType: kind, storeyIds: ["L0"], paths: [[[0, 0, 0], [1, 1, 3]]], rings: [], metadata: {} });
   const data = dataset([node("d", { nodeType: "door" }), node("s", { nodeType: "space" })], [edge("d", "s")], [space("s")], [door("d", true, ["s"]), door("omitted")], [vertical("stairs", "stair"), vertical("lift", "elevator")]);

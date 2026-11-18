@@ -6,6 +6,7 @@ import { DEMO_DATASET } from "../lib/demo-data";
 import { loadGraphFile } from "../lib/graph-loader";
 import { nodeDisplayLabel } from "../lib/types";
 import type { GraphDataset, GraphNode, VisibilityState } from "../lib/types";
+import type { PlanCamera } from "../lib/plan-camera";
 import { FloorPlan2D } from "./FloorPlan2D";
 import { Graph3D } from "./Graph3D";
 import { NodeContext2D } from "./NodeContext2D";
@@ -126,7 +127,10 @@ export function GraphWorkbench() {
   const [visibility, setVisibility] = useState<VisibilityState>(DEFAULT_VISIBILITY);
   const [linkViews, setLinkViews] = useState(false);
   const [reset3D, setReset3D] = useState(0);
-  const [reset2D, setReset2D] = useState(0);
+  const [planCameras, setPlanCameras] = useState<Record<string, PlanCamera>>({});
+  const planCamera = planCameras[storeyId ?? "all"];
+  const changePlanCamera = (camera: PlanCamera) => setPlanCameras(current => ({ ...current, [storeyId ?? "all"]: camera }));
+  const fitPlanCamera = () => setPlanCameras(current => { const next = { ...current }; delete next[storeyId ?? "all"]; return next; });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -169,7 +173,7 @@ export function GraphWorkbench() {
       setStoreyId(initial?.storeyId ?? loaded.storeys[0]?.id ?? null);
       setVisibility(DEFAULT_VISIBILITY);
       setReset3D((value) => value + 1);
-      setReset2D((value) => value + 1);
+      setPlanCameras({});
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The selected file could not be read.");
     } finally {
@@ -310,10 +314,10 @@ export function GraphWorkbench() {
         {[ ["explorer", "Explorer"], ["validation", "Validation"], ["mobility", "Mobility"] ].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={activeTab === id} aria-controls={`panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => { setActiveTab(id); if (id === "validation") setValidationOpened(true); }} onKeyDown={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) { e.preventDefault(); const tabs=['explorer','validation','mobility']; const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs[2] : tabs[(tabs.indexOf(activeTab)+(e.key==='ArrowRight'?1:2))%3]; setActiveTab(next); if (next === "validation") setValidationOpened(true); document.getElementById(`tab-${next}`)?.focus(); } }}>{label}</button>)}
       </div>
       <div id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" hidden={activeTab !== "validation"}>
-        {validationOpened && <ValidationWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />}
+        {validationOpened && <ValidationWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} storeyId={storeyId} onStoreyChange={setStoreyId} camera={planCamera} onCameraChange={changePlanCamera} />}
       </div>
       <div id="panel-mobility" role="tabpanel" aria-labelledby="tab-mobility" hidden={activeTab !== "mobility"}>
-        <MobilityWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} />
+        <MobilityWorkbench key={dataset.validation?.fingerprint ?? dataset.name} dataset={dataset} storeyId={storeyId} onStoreyChange={setStoreyId} camera={planCamera} onCameraChange={changePlanCamera} />
       </div>
       <div id="panel-explorer" role="tabpanel" aria-labelledby="tab-explorer" hidden={activeTab !== "explorer"}>
       <section className="stats-row" aria-label="Graph summary">
@@ -390,14 +394,16 @@ export function GraphWorkbench() {
                   {dataset.storeys.map((storey) => <option key={storey.id} value={storey.id}>{storey.label}</option>)}
                 </select>
               </label>
-              <button className="icon-button" type="button" onClick={() => setReset2D((value) => value + 1)} aria-label="Reset 2D floor plan">
+              <button className="icon-button" type="button" onClick={fitPlanCamera} aria-label="Reset 2D floor plan">
                 Fit view
               </button>
             </div>
           </div>
           <FloorPlan2D
-            key={`${dataset.name}:${storeyId ?? "all"}:${reset2D}`}
+            key={`${dataset.validation?.fingerprint ?? dataset.name}:${storeyId ?? "all"}`}
             dataset={dataset}
+            camera={planCamera}
+            onCameraChange={changePlanCamera}
             storeyId={storeyId}
             selectedNodeId={selectedNodeId}
             visibility={visibility}

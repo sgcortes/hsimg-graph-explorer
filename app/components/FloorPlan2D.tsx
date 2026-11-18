@@ -14,8 +14,10 @@ import {
   nodeVisible,
 } from "../lib/graph-view";
 import { GraphLegend } from "./GraphLegend";
+import { fitPlan, panPlan, zoomPlan } from "../lib/plan-camera";
+import type { PlanCamera, PlanCameraProps } from "../lib/plan-camera";
 
-interface FloorPlan2DProps {
+interface FloorPlan2DProps extends PlanCameraProps {
   dataset: GraphDataset;
   storeyId: string | null;
   selectedNodeId: string | null;
@@ -90,12 +92,14 @@ export function FloorPlan2D({
   destinationNodeId = null,
   navigationMode = false,
   spaceColors,
+  camera: sharedCamera,
+  onCameraChange,
 }: FloorPlan2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const screenNodesRef = useRef<Array<{ id: string; x: number; y: number }>>([]);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const [localCamera, setLocalCamera] = useState<PlanCamera>();
   const [size, setSize] = useState({ width: 700, height: 480 });
 
   const floorNodes = useMemo(
@@ -164,36 +168,49 @@ export function FloorPlan2D({
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const observer = new ResizeObserver(() => {
-      setSize({ width: Math.max(wrapper.clientWidth, 1), height: Math.max(wrapper.clientHeight, 1) });
+      if (wrapper.clientWidth && wrapper.clientHeight) setSize({ width: wrapper.clientWidth, height: wrapper.clientHeight });
     });
     observer.observe(wrapper);
-    setSize({ width: Math.max(wrapper.clientWidth, 1), height: Math.max(wrapper.clientHeight, 1) });
+    if (wrapper.clientWidth && wrapper.clientHeight) setSize({ width: wrapper.clientWidth, height: wrapper.clientHeight });
     return () => observer.disconnect();
   }, []);
 
+  const fitted = fitPlan(floorBounds?.minX ?? 0, floorBounds?.minY ?? 0, floorBounds?.maxX ?? 100, floorBounds?.maxY ?? 100, size.width, size.height);
+  const camera = sharedCamera ?? localCamera ?? fitted;
+  const changeCamera = (value: PlanCamera) => {
+    if (onCameraChange) onCameraChange(value); else setLocalCamera(value);
+  };
+  // Initialise only a visible viewport: hidden tabs must not overwrite the shared camera.
   useEffect(() => {
-    if (!linkViews || !selectedNodeId || !floorBounds) return;
-    const selected = floorNodes.find((node) => node.id === selectedNodeId);
+    if (!sharedCamera && !localCamera && wrapperRef.current?.clientWidth && wrapperRef.current?.clientHeight) {
+      changeCamera(fitPlan(floorBounds?.minX ?? 0, floorBounds?.minY ?? 0, floorBounds?.maxX ?? 100, floorBounds?.maxY ?? 100,
+        wrapperRef.current.clientWidth, wrapperRef.current.clientHeight));
+    }
+  }, [sharedCamera, localCamera, floorBounds, size]);
+  const lastFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkViews) { lastFocus.current = null; return; }
+    if (!selectedNodeId || lastFocus.current === selectedNodeId || !wrapperRef.current?.clientWidth) return;
+    const selected = floorNodes.find(node => node.id === selectedNodeId);
     if (!selected) return;
-    const frame = requestAnimationFrame(() => {
-      const padding = 34;
-      const baseScale = Math.min(
-        (size.width - padding * 2) / Math.max(floorBounds.maxX - floorBounds.minX, 1),
-        (size.height - padding * 2) / Math.max(floorBounds.maxY - floorBounds.minY, 1),
-      );
-      setView((current) => {
-        const zoom = Math.max(current.zoom, 2.25);
-        const middleX = (floorBounds.minX + floorBounds.maxX) / 2;
-        const middleY = (floorBounds.minY + floorBounds.maxY) / 2;
-        return {
-          zoom,
-          panX: (middleX - selected.x) * baseScale * zoom,
-          panY: (selected.y - middleY) * baseScale * zoom,
-        };
-      });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [floorBounds, floorNodes, linkViews, selectedNodeId, size]);
+    lastFocus.current = selectedNodeId;
+    changeCamera({ x: selected.x, y: selected.y, unitsPerPixel: Math.min(camera.unitsPerPixel, fitted.unitsPerPixel / 2.25) });
+  }, [floorNodes, linkViews, selectedNodeId, size]);
+  // React's delegated wheel handler is passive in some browsers. Use a native listener.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrapper = wrapperRef.current;
+    if (!canvas || !wrapper) return;
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = canvas.getBoundingClientRect();
+      changeCamera(zoomPlan(camera, event.deltaY < 0 ? 1 / 1.18 : 1.18,
+        event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2));
+    };
+    wrapper.addEventListener("wheel", wheel, { passive: false });
+    return () => wrapper.removeEventListener("wheel", wheel);
+  }, [camera, onCameraChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -223,21 +240,10 @@ export function FloorPlan2D({
       ctx.fillText("No geometry is available for this level", size.width / 2, size.height / 2);
       return;
     }
-    const xs = points.map((point) => point[0]);
-    const ys = points.map((point) => point[1]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const padding = 34;
-    const baseScale = Math.min(
-      (size.width - padding * 2) / Math.max(maxX - minX, 1),
-      (size.height - padding * 2) / Math.max(maxY - minY, 1),
-    );
     const transform: Transform = {
-      scale: baseScale * view.zoom,
-      offsetX: size.width / 2 - ((minX + maxX) / 2) * baseScale * view.zoom + view.panX,
-      offsetY: size.height / 2 + ((minY + maxY) / 2) * baseScale * view.zoom + view.panY,
+      scale: 1 / camera.unitsPerPixel,
+      offsetX: size.width / 2 - camera.x / camera.unitsPerPixel,
+      offsetY: size.height / 2 + camera.y / camera.unitsPerPixel,
     };
     const screen = (x: number, y: number) => ({
       x: x * transform.scale + transform.offsetX,
@@ -414,7 +420,7 @@ export function FloorPlan2D({
       ctx.textAlign = "center";
       ctx.fillText(text, labelX + width / 2, labelY + 16);
     }
-  }, [dataset, destinationNodeId, floorConceptualLinks, floorEdges, floorNodes, floorSpaces, floorVerticalFeatures, nodeById, originNodeId, routeNodeIds, selectedNodeId, size, storeyId, view, visibility, spaceColors]);
+  }, [dataset, destinationNodeId, floorConceptualLinks, floorEdges, floorNodes, floorSpaces, floorVerticalFeatures, nodeById, originNodeId, routeNodeIds, selectedNodeId, size, storeyId, camera, visibility, spaceColors]);
 
   const pointerPosition = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -422,7 +428,7 @@ export function FloorPlan2D({
   };
 
   return (
-    <div ref={wrapperRef} className="viewport-canvas floor-plan" data-testid="floor-plan-2d">
+    <div ref={wrapperRef} className="viewport-canvas floor-plan" data-testid="floor-plan-2d" data-camera={JSON.stringify(camera)}>
       <canvas
         ref={canvasRef}
         aria-label="2D floor plan for the selected building level"
@@ -437,7 +443,7 @@ export function FloorPlan2D({
           const dx = point.x - dragRef.current.x;
           const dy = point.y - dragRef.current.y;
           if (Math.abs(dx) + Math.abs(dy) > 2) dragRef.current.moved = true;
-          setView((current) => ({ ...current, panX: current.panX + dx, panY: current.panY + dy }));
+          changeCamera(panPlan(camera, dx, dy));
           dragRef.current.x = point.x;
           dragRef.current.y = point.y;
         }}
@@ -452,17 +458,16 @@ export function FloorPlan2D({
           dragRef.current = null;
           event.currentTarget.releasePointerCapture(event.pointerId);
         }}
-        onWheel={(event) => {
-          event.preventDefault();
-          const factor = event.deltaY < 0 ? 1.14 : 0.88;
-          setView((current) => ({
-            ...current,
-            zoom: Math.min(Math.max(current.zoom * factor, 0.45), 12),
-          }));
-        }}
+        onPointerCancel={() => { dragRef.current = null; }}
+
       />
+      <div className="map-zoom-controls" role="group" aria-label="2D zoom controls">
+        <button type="button" onClick={() => changeCamera(zoomPlan(camera, 1 / 1.35))} aria-label="Zoom in 2D" title="Zoom in">+</button>
+        <button type="button" onClick={() => changeCamera(zoomPlan(camera, 1.35))} aria-label="Zoom out 2D" title="Zoom out">−</button>
+        <button type="button" onClick={() => changeCamera(fitted)} aria-label="Fit 2D floor" title="Fit floor">Fit</button>
+      </div>
       {!navigationMode && <GraphLegend />}
-      <div className="canvas-hint">Drag to pan · wheel to zoom · click to inspect</div>
+      <div className="canvas-hint">Drag to pan · + / − or wheel to zoom · click to inspect</div>
     </div>
   );
 }

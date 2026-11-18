@@ -209,6 +209,10 @@ export function Graph3D({
     controls.screenSpacePanning = true;
     controls.minDistance = 0.5;
     controls.maxDistance = 50000;
+    // Keep wheel zoom inside this viewport; never scroll an ancestor page.
+    const containWheel = (event: WheelEvent) => { event.preventDefault(); event.stopPropagation(); };
+    renderer.domElement.addEventListener("wheel", containWheel, { passive: false });
+    mount.addEventListener("wheel", containWheel, { passive: false });
 
     scene.add(new THREE.HemisphereLight("#ffffff", "#d8e1e6", 1.5));
     const keyLight = new THREE.DirectionalLight("#ffffff", 1.35);
@@ -394,6 +398,8 @@ export function Graph3D({
       if (state) cancelAnimationFrame(state.animation);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("wheel", containWheel);
+      mount.removeEventListener("wheel", containWheel);
       controls.dispose();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
@@ -491,6 +497,15 @@ export function Graph3D({
     state.controls.update();
   }, [resetToken]);
 
+  const zoomBy = (factor: number) => {
+    const state = stateRef.current;
+    if (!state) return;
+    const offset = state.camera.position.clone().sub(state.controls.target);
+    const distance = Math.min(state.controls.maxDistance, Math.max(state.controls.minDistance, offset.length() * factor));
+    state.camera.position.copy(state.controls.target).add(offset.setLength(distance));
+    state.controls.update();
+  };
+
   return (
     <div
       ref={mountRef}
@@ -499,6 +514,10 @@ export function Graph3D({
       role="img"
       aria-label="Interactive 3D mobility graph"
     >
+      <div className="map-zoom-controls" role="group" aria-label="3D zoom controls">
+        <button type="button" onClick={() => zoomBy(1 / 1.35)} aria-label="Zoom in 3D" title="Zoom in">+</button>
+        <button type="button" onClick={() => zoomBy(1.35)} aria-label="Zoom out 3D" title="Zoom out">−</button>
+      </div>
       <GraphLegend />
     </div>
   );
